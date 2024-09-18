@@ -45,11 +45,24 @@ def scan_cache():
     cache_info = scan_cache_dir()
     display_cache_items()
 
+# 선택된 항목의 개수와 총 용량을 합산하여 표시하는 함수
+def update_selection_summary():
+    selected_count = 0
+    total_size = 0
+    for var, rev in checkboxes:
+        if var.get():
+            selected_count += 1
+            total_size += rev['size']
+
+    label_selection_summary.configure(
+        text=f"선택된 항목: {selected_count}개, 총 용량: {total_size / (1024 ** 2):.2f} MB"
+    )
+
 # 캐시 항목을 표 형태로 표시하는 기능
 def display_cache_items():
     for widget in scrollable_frame.winfo_children():
         widget.destroy()
-    
+
     headers = ["선택", "Repo ID", "Revision", "Size (MB)", "Last Modified"]
     for col, header in enumerate(headers):
         label = ctk.CTkLabel(master=scrollable_frame, text=header, font=("Arial", 12, "bold"))
@@ -71,7 +84,7 @@ def display_cache_items():
     
     for row, rev in enumerate(revisions, start=1):
         var = ctk.BooleanVar()
-        cb = ctk.CTkCheckBox(master=scrollable_frame, variable=var)
+        cb = ctk.CTkCheckBox(master=scrollable_frame, text="check", variable=var, command=update_selection_summary)  # text를 빈 문자열로 설정
         cb.grid(row=row, column=0, padx=5, pady=5)
         checkboxes.append((var, rev))
 
@@ -97,11 +110,13 @@ def display_cache_items():
 def select_all():
     for var, _ in checkboxes:
         var.set(True)
+    update_selection_summary()
 
 # 전체 해제 기능
 def deselect_all():
     for var, _ in checkboxes:
         var.set(False)
+    update_selection_summary()
 
 # 선택한 캐시 항목 삭제
 def delete_selected():
@@ -199,6 +214,10 @@ tab_cache = tab_view.add("캐시 관리")
 scrollable_frame = ctk.CTkScrollableFrame(master=tab_cache, width=760, height=300)
 scrollable_frame.pack(fill='both', expand=True, padx=20, pady=20)
 
+# 선택된 항목과 용량 요약 표시 라벨
+label_selection_summary = ctk.CTkLabel(master=tab_cache, text="선택된 항목: 0개, 총 용량: 0.00 MB")
+label_selection_summary.pack(pady=10)
+
 delete_btn = ctk.CTkButton(master=tab_cache, text="선택한 캐시 삭제", command=delete_selected)
 delete_btn.pack(pady=10)
 
@@ -214,8 +233,3 @@ scan_cache()
 
 # 메인 루프 시작
 app.mainloop()
-
-
-
-
-# TODO: GPU VRAM 상황 및 관리
