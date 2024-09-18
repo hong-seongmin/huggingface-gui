@@ -3,6 +3,7 @@ os.chdir(os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())
 import customtkinter as ctk
 from huggingface_hub import HfApi, scan_cache_dir
 from tkinter import messagebox
+import tkinter as tk
 import os
 
 # 로그인 상태를 저장할 파일 경로 설정
@@ -37,12 +38,33 @@ ctk.set_default_color_theme("blue")
 # 메인 윈도우 생성
 app = ctk.CTk()
 app.title("Hugging Face 캐시 및 사용자 관리")
-app.geometry("800x600")
+app.geometry("900x600")  # 가로 크기 증가
 
 # 캐시 정보 스캔 및 화면에 표시하는 기능
 def scan_cache():
-    global cache_info
+    global cache_info, revisions, sort_orders
     cache_info = scan_cache_dir()
+
+    # 캐시 데이터 수집
+    revisions = []
+    for repo in cache_info.repos:
+        for revision in repo.revisions:
+            rev_info = {
+                "repo_id": repo.repo_id,
+                "revision": revision.commit_hash,
+                "size": revision.size_on_disk,
+                "last_modified": revision.last_modified,
+            }
+            revisions.append(rev_info)
+    
+    # 각 열의 초기 정렬 순서 (True: 오름차순, False: 내림차순)
+    sort_orders = {
+        "repo_id": True,
+        "revision": True,
+        "size": False,
+        "last_modified": True,
+    }
+
     display_cache_items()
 
 # 선택된 항목의 개수와 총 용량을 합산하여 표시하는 함수
@@ -60,51 +82,75 @@ def update_selection_summary():
 
 # 캐시 항목을 표 형태로 표시하는 기능
 def display_cache_items():
-    for widget in scrollable_frame.winfo_children():
+    for widget in table_frame.winfo_children():
         widget.destroy()
 
+    # 표 헤더 생성
     headers = ["선택", "Repo ID", "Revision", "Size (MB)", "Last Modified"]
-    for col, header in enumerate(headers):
-        label = ctk.CTkLabel(master=scrollable_frame, text=header, font=("Arial", 12, "bold"))
-        label.grid(row=0, column=col, padx=5, pady=5)
+    columns = ["select", "repo_id", "revision", "size", "last_modified"]
+    column_widths = [50, 200, 150, 100, 200]  # 각 열의 너비 설정
 
-    revisions = []
-    for repo in cache_info.repos:
-        for revision in repo.revisions:
-            rev_info = {
-                "repo_id": repo.repo_id,
-                "revision": revision.commit_hash,
-                "size": revision.size_on_disk,
-                "last_modified": revision.last_modified,
-            }
-            revisions.append(rev_info)
+    for col, (header, col_name, width) in enumerate(zip(headers, columns, column_widths)):
+        label = ctk.CTkLabel(master=table_frame, text=header, font=("Arial", 12, "bold"))
+        label.grid(row=0, column=col, padx=5, pady=5)
+        label.bind("<Button-1>", lambda e, cn=col_name: sort_by_column(cn))
+        label.configure(width=width)
+        # 헤더 배경색 변경으로 클릭 가능함을 표시
+        label.configure(cursor="hand2")
 
     global checkboxes
     checkboxes = []
-    
+
+    # 데이터 표시
     for row, rev in enumerate(revisions, start=1):
         var = ctk.BooleanVar()
-        cb = ctk.CTkCheckBox(master=scrollable_frame, text="check", variable=var, command=update_selection_summary)  # text를 빈 문자열로 설정
+        cb = ctk.CTkCheckBox(master=table_frame, text="check", variable=var, command=update_selection_summary)
         cb.grid(row=row, column=0, padx=5, pady=5)
         checkboxes.append((var, rev))
 
-        repo_id_label = ctk.CTkLabel(master=scrollable_frame, text=rev['repo_id'])
+        # Repo ID
+        repo_id_label = ctk.CTkLabel(master=table_frame, text=rev['repo_id'])
         repo_id_label.grid(row=row, column=1, padx=5, pady=5)
+        repo_id_label.configure(width=column_widths[1])
 
-        revision_label = ctk.CTkLabel(master=scrollable_frame, text=rev['revision'][:7])
+        # Revision
+        revision_label = ctk.CTkLabel(master=table_frame, text=rev['revision'][:7])
         revision_label.grid(row=row, column=2, padx=5, pady=5)
+        revision_label.configure(width=column_widths[2])
 
-        size_label = ctk.CTkLabel(master=scrollable_frame, text=f"{rev['size'] / (1024 ** 2):.2f}")
+        # Size (MB)
+        size_label = ctk.CTkLabel(master=table_frame, text=f"{rev['size'] / (1024 ** 2):.2f}")
         size_label.grid(row=row, column=3, padx=5, pady=5)
+        size_label.configure(width=column_widths[3])
 
-        last_modified_label = ctk.CTkLabel(master=scrollable_frame, text=rev['last_modified'])
+        # Last Modified
+        last_modified_label = ctk.CTkLabel(master=table_frame, text=rev['last_modified'])
         last_modified_label.grid(row=row, column=4, padx=5, pady=5)
-    
-    select_all_btn = ctk.CTkButton(master=scrollable_frame, text="전체 선택", command=select_all)
+        last_modified_label.configure(width=column_widths[4])
+
+    # 전체 선택/해제 버튼
+    select_all_btn = ctk.CTkButton(master=table_frame, text="전체 선택", command=select_all)
     select_all_btn.grid(row=len(revisions) + 1, column=0, padx=5, pady=5)
 
-    deselect_all_btn = ctk.CTkButton(master=scrollable_frame, text="전체 해제", command=deselect_all)
+    deselect_all_btn = ctk.CTkButton(master=table_frame, text="전체 해제", command=deselect_all)
     deselect_all_btn.grid(row=len(revisions) + 1, column=1, padx=5, pady=5)
+
+    update_selection_summary()
+
+# 열 정렬 함수
+def sort_by_column(column_name):
+    global revisions, sort_orders
+    reverse = not sort_orders[column_name]
+    sort_orders[column_name] = reverse
+
+    if column_name == "size":
+        revisions.sort(key=lambda x: x[column_name], reverse=reverse)
+    elif column_name == "last_modified":
+        revisions.sort(key=lambda x: x[column_name] or '', reverse=reverse)
+    else:
+        revisions.sort(key=lambda x: x[column_name].lower(), reverse=reverse)
+
+    display_cache_items()
 
 # 전체 선택 기능
 def select_all():
@@ -124,7 +170,7 @@ def delete_selected():
     if not selected_revisions:
         messagebox.showinfo("알림", "삭제할 항목을 선택하세요.")
         return
-    
+
     confirm = messagebox.askyesno("확인", f"{len(selected_revisions)}개의 수정 버전을 삭제하시겠습니까?")
     if confirm:
         delete_strategy = cache_info.delete_revisions(*selected_revisions)
@@ -211,8 +257,51 @@ label_env_info.pack(pady=5)
 # 두 번째 탭: 캐시 관리
 tab_cache = tab_view.add("캐시 관리")
 
-scrollable_frame = ctk.CTkScrollableFrame(master=tab_cache, width=760, height=300)
-scrollable_frame.pack(fill='both', expand=True, padx=20, pady=20)
+# 프레임 생성 (스크롤바와 캔버스를 포함할 컨테이너)
+container = tk.Frame(tab_cache)
+container.pack(fill=tk.BOTH, expand=True)
+
+# 캔버스 생성
+canvas = tk.Canvas(container)
+canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+# 스크롤바 생성
+vsb = tk.Scrollbar(container, orient="vertical", command=canvas.yview)
+vsb.pack(side=tk.RIGHT, fill=tk.Y)
+hsb = tk.Scrollbar(tab_cache, orient="horizontal", command=canvas.xview)
+hsb.pack(side=tk.BOTTOM, fill=tk.X)
+
+canvas.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+# 표를 담을 프레임 생성
+table_frame = tk.Frame(canvas)
+
+# 캔버스에 프레임 추가
+canvas_window = canvas.create_window((0,0), window=table_frame, anchor='nw')
+
+# 스크롤 영역 설정 함수
+def configure_scroll_region(event):
+    canvas.configure(scrollregion=canvas.bbox("all"))
+    # 캔버스 너비를 프레임의 너비로 설정
+    canvas.itemconfigure(canvas_window, width=event.width)
+
+# 프레임 크기 변경 시 스크롤 영역 재설정
+table_frame.bind('<Configure>', configure_scroll_region)
+
+# 캔버스 크기 변경 시 프레임 너비 조정
+canvas.bind('<Configure>', lambda e: canvas.itemconfigure(canvas_window, width=e.width))
+
+# 마우스 휠 스크롤 함수
+def on_mousewheel(event):
+    canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+
+# 마우스 휠 이벤트 바인딩
+canvas.bind_all("<MouseWheel>", on_mousewheel)
+
+# 표를 담을 프레임 생성
+table_frame = tk.Frame(canvas)
+
+canvas.create_window((0,0), window=table_frame, anchor='nw')
 
 # 선택된 항목과 용량 요약 표시 라벨
 label_selection_summary = ctk.CTkLabel(master=tab_cache, text="선택된 항목: 0개, 총 용량: 0.00 MB")
