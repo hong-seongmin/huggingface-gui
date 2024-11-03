@@ -1,0 +1,5 @@
+streamlit>=1.25.0
+huggingface_hub>=0.15.0
+pandas>=1.5.0
+streamlit-aggrid>=0.3.3
+customtkinter>=5.1.0
