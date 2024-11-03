@@ -1,7 +1,8 @@
 import os
 import streamlit as st
 from huggingface_hub import HfApi, scan_cache_dir
-from datetime import datetime
+import pandas as pd
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
 
 # 로그인 상태를 저장할 파일 경로 설정
 LOGIN_FILE = "login_token.txt"
@@ -28,166 +29,169 @@ def delete_login_token():
     if os.path.exists(LOGIN_FILE):
         os.remove(LOGIN_FILE)
 
-# 캐시 정보 스캔
-@st.cache_data
-def get_cache_info():
-    return scan_cache_dir()
+# Streamlit 페이지 설정
+st.set_page_config(page_title="Hugging Face 캐시 및 사용자 관리", layout="wide")
 
+# 세션 상태 초기화
+if 'token' not in st.session_state:
+    st.session_state['token'] = load_login_token()
 
-# 캐시 데이터를 정리
-def process_cache_info(cache_info):
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = st.session_state['token'] is not None
+
+if 'cache_info' not in st.session_state:
+    st.session_state['cache_info'] = None
+
+if 'revisions_df' not in st.session_state:
+    st.session_state['revisions_df'] = pd.DataFrame()
+
+# 로그인 기능
+def login():
+    token = st.session_state['input_token'].strip()
+    if token:
+        try:
+            api.set_access_token(token)
+            save_login_token(token)
+            st.session_state['token'] = token
+            st.session_state['logged_in'] = True
+            st.success("로그인 성공!")
+        except Exception as e:
+            st.error(f"로그인에 실패했습니다: {e}")
+    else:
+        st.error("유효한 토큰을 입력하세요.")
+
+# 로그아웃 기능
+def logout():
+    api.set_access_token(None)
+    delete_login_token()
+    st.session_state['token'] = None
+    st.session_state['logged_in'] = False
+    st.success("로그아웃되었습니다.")
+
+# 환경 정보 출력
+def show_env():
+    try:
+        env_info = api.whoami()
+        st.write(f"환경 정보: {env_info}")
+    except Exception as e:
+        st.error(f"환경 정보를 불러오지 못했습니다: {e}")
+
+# 현재 사용자 정보 출력
+def show_whoami():
+    try:
+        user_info = api.whoami()
+        st.write(f"사용자: {user_info['name']}")
+    except Exception as e:
+        st.error(f"사용자 정보를 불러오지 못했습니다: {e}")
+
+# 캐시 정보 스캔 및 화면에 표시하는 기능
+def scan_cache():
+    cache_info = scan_cache_dir()
+    st.session_state['cache_info'] = cache_info
+
+    # 캐시 데이터 수집
     revisions = []
     for repo in cache_info.repos:
         for revision in repo.revisions:
-            # last_modified를 datetime 형식으로 변환
-            last_modified = (
-                datetime.fromtimestamp(revision.last_modified).strftime("%Y-%m-%d %H:%M:%S")
-                if isinstance(revision.last_modified, (int, float))
-                else "Unknown"
-            )
             rev_info = {
-                "repo_id": repo.repo_id,
-                "revision": revision.commit_hash[:7],
-                "size_MB": revision.size_on_disk / (1024 ** 2),
-                "last_modified": last_modified,
+                "Repo ID": repo.repo_id,
+                "Revision": revision.commit_hash[:7],
+                "Size (MB)": round(revision.size_on_disk / (1024 ** 2), 2),
+                "Last Modified": revision.last_modified,
+                "Full Revision": revision.commit_hash,
             }
             revisions.append(rev_info)
-    return revisions
+    st.session_state['revisions_df'] = pd.DataFrame(revisions)
 
-# 선택한 캐시 삭제
-def delete_selected_revisions(selected_revisions):
-    delete_strategy = cache_info.delete_revisions(*selected_revisions)
+# 선택한 캐시 항목 삭제
+def delete_selected(selected_rows):
+    if selected_rows.empty:
+        st.info("삭제할 항목을 선택하세요.")
+        return
+
+    selected_revisions = selected_rows['Full Revision'].tolist()
+
+    # 삭제 실행
+    delete_strategy = st.session_state['cache_info'].delete_revisions(*selected_revisions)
     delete_strategy.execute()
 
-# 초기 설정
-st.set_page_config(page_title="Hugging Face 캐시 및 사용자 관리", layout="wide")
+    # 삭제 후 캐시 목록 새로고침
+    scan_cache()
 
-# 사이드바에 로그인 상태 표시
-st.sidebar.header("로그인 상태")
-token = load_login_token()
-if token:
-    st.sidebar.success("로그인 상태 유지됨")
-else:
-    st.sidebar.warning("로그인 필요")
+    st.success("선택한 캐시가 삭제되었습니다.")
 
-# 탭 생성
-tab_user, tab_cache = st.tabs(["로그인 및 사용자 정보", "캐시 관리"])
+# 메인 함수
+def main():
+    st.title("Hugging Face 캐시 및 사용자 관리")
 
-### 첫 번째 탭: 로그인 및 사용자 정보 ###
-with tab_user:
-    st.header("로그인 및 사용자 정보")
+    # 탭 생성
+    tabs = st.tabs(["로그인 및 사용자 정보", "캐시 관리"])
 
-    # 로그인 섹션
-    with st.expander("로그인 / 로그아웃"):
-        token_input = st.text_input("Hugging Face 토큰:", type="password")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("로그인"):
-                if token_input:
-                    try:
-                        api.set_access_token(token_input)
-                        save_login_token(token_input)
-                        st.success("로그인 성공!")
-                        token = token_input
-                    except Exception as e:
-                        st.error(f"로그인에 실패했습니다: {e}")
-                else:
-                    st.error("유효한 토큰을 입력하세요.")
-        with col2:
-            if st.button("로그아웃"):
-                api.set_access_token(None)
-                delete_login_token()
-                st.success("로그아웃되었습니다.")
-                token = None
+    # 첫 번째 탭: 로그인 / 로그아웃 및 사용자 정보
+    with tabs[0]:
+        st.subheader("로그인 및 사용자 정보")
 
-    # 사용자 정보 섹션
-    with st.expander("사용자 정보 및 환경 정보"):
-        col1, col2 = st.columns(2)
-        if st.button("현재 사용자 정보"):
-            try:
-                user_info = api.whoami()
-                st.json(user_info)
-            except Exception as e:
-                st.error(f"사용자 정보를 불러오지 못했습니다: {e}")
+        if not st.session_state['logged_in']:
+            st.text_input("Hugging Face 토큰:", key='input_token')
+            st.button("로그인", on_click=login)
+        else:
+            st.write("로그인 상태 유지됨")
+            st.button("로그아웃", on_click=logout)
 
-        if st.button("환경 정보 보기"):
-            try:
-                env_info = api.whoami()
-                st.write(f"환경 정보: {env_info}")
-            except Exception as e:
-                st.error(f"환경 정보를 불러오지 못했습니다: {e}")
+        if st.session_state['logged_in']:
+            st.button("현재 사용자 정보", on_click=show_whoami)
+            st.button("환경 정보 보기", on_click=show_env)
 
-### 두 번째 탭: 캐시 관리 ###
-with tab_cache:
-    st.header("캐시 관리")
+    # 두 번째 탭: 캐시 관리
+    with tabs[1]:
+        st.subheader("캐시 관리")
+        if st.button("캐시 스캔"):
+            scan_cache()
 
-    # 캐시 스캔 버튼
-    if st.button("캐시 스캔"):
-        cache_info = get_cache_info()
-        revisions = process_cache_info(cache_info)
-        st.session_state.revisions = revisions
-    else:
-        cache_info = get_cache_info()
-        revisions = process_cache_info(cache_info)
-        st.session_state.revisions = revisions
+        if st.session_state['cache_info']:
+            # AgGrid 설정
+            gb = GridOptionsBuilder.from_dataframe(st.session_state['revisions_df'])
+            gb.configure_selection("multiple", use_checkbox=True, groupSelectsChildren=True)
+            gb.configure_pagination(paginationAutoPageSize=True)
+            gb.configure_side_bar()
+            gb.configure_default_column(enablePivot=True, enableValue=True, enableRowGroup=True)
 
-    # 캐시 데이터 로드
-    revisions = st.session_state.get('revisions', [])
+            gridOptions = gb.build()
 
-    if not revisions:
-        st.info("캐시가 비어 있습니다.")
-    else:
-        # 캐시 데이터 표시
-        st.subheader("캐시 항목")
-        # 선택된 항목을 저장할 리스트
-        selected_revisions = []
+            grid_response = AgGrid(
+                st.session_state['revisions_df'],
+                gridOptions=gridOptions,
+                data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+                update_mode=GridUpdateMode.SELECTION_CHANGED,
+                fit_columns_on_grid_load=True,
+                enable_enterprise_modules=True,
+                height=400,
+                width='100%',
+                reload_data=False
+            )
 
-        # 표 형식으로 캐시 데이터 표시
-        for i, rev in enumerate(revisions):
-            col1, col2, col3, col4, col5 = st.columns([1, 3, 2, 2, 3])
-            with col1:
-                selected = st.checkbox("", key=f"select_{i}")
-                if selected:
-                    selected_revisions.append(rev['revision'])
-            with col2:
-                st.text(rev['repo_id'])
-            with col3:
-                st.text(rev['revision'])
-            with col4:
-                st.text(f"{rev['size_MB']:.2f} MB")
-            with col5:
-                st.text(rev['last_modified'])
+            selected = grid_response['selected_rows']
+            selected_df = pd.DataFrame(selected)
 
-        # 전체 선택 / 해제 버튼
-        st.markdown("---")
-        col_all1, col_all2 = st.columns(2)
-        with col_all1:
-            if st.button("전체 선택"):
-                for i in range(len(revisions)):
-                    st.session_state[f"select_{i}"] = True
-        with col_all2:
-            if st.button("전체 해제"):
-                for i in range(len(revisions)):
-                    st.session_state[f"select_{i}"] = False
-
-        # 선택된 항목과 총 용량 표시
-        selected_count = len(selected_revisions)
-        total_size = sum([rev['size_MB'] for rev in revisions if rev['revision'] in selected_revisions])
-        st.write(f"선택된 항목: {selected_count}개, 총 용량: {total_size:.2f} MB")
-
-        # 선택된 캐시 삭제 버튼
-        if st.button("선택한 캐시 삭제"):
-            if selected_revisions:
-                confirm = st.warning(f"{selected_count}개의 수정 버전을 삭제하시겠습니까?", icon="⚠️")
-                if st.button("삭제 실행"):
-                    try:
-                        delete_selected_revisions(selected_revisions)
-                        st.success("선택한 캐시가 삭제되었습니다.")
-                        # 캐시 재스캔
-                        cache_info = get_cache_info()
-                        revisions = process_cache_info(cache_info)
-                        st.session_state.revisions = revisions
-                    except Exception as e:
-                        st.error(f"캐시 삭제에 실패했습니다: {e}")
+            # 선택 요약
+            if not selected_df.empty:
+                selected_count = len(selected_df)
+                total_size = selected_df['Size (MB)'].sum()
+                st.write(f"선택된 항목: {selected_count}개, 총 용량: {total_size:.2f} MB")
+                
+                # 삭제 확인 및 버튼
+                with st.expander("선택한 캐시 삭제"):
+                    st.warning(f"{selected_count}개의 수정 버전을 삭제하시겠습니까?")
+                    if st.button("삭제 확인"):
+                        delete_selected(selected_df)
+                        st.rerun()  # 페이지 갱신
             else:
-                st.info("삭제할 항목을 선택하세요.")
+                st.write("선택된 항목: 0개, 총 용량: 0.00 MB")
+
+# 프로그램 시작 시 로그인 상태 확인 및 캐시 스캔
+if st.session_state['logged_in']:
+    api.set_access_token(st.session_state['token'])
+    if st.session_state['cache_info'] is None:
+        scan_cache()
+
+main()
