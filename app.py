@@ -57,6 +57,75 @@ if 'fastapi_server' not in st.session_state:
 if 'model_analyzer' not in st.session_state:
     st.session_state['model_analyzer'] = ComprehensiveModelAnalyzer()
 
+# 모델 로딩 상태 추적을 위한 초기화
+if 'model_status_tracker' not in st.session_state:
+    st.session_state['model_status_tracker'] = {
+        'last_check_time': 0,
+        'last_status_check': 0,
+        'need_refresh': False,
+        'loading_models': set(),
+        'loaded_models': set(),
+        'previous_loaded': set(),
+        'check_active': False
+    }
+
+# 모델 매니저에 콜백 등록 (스레드 안전한 업데이트)
+def model_status_callback(model_name, event_type, data):
+    """모델 상태 변화 콜백 - 스레드 안전한 방식으로 상태 업데이트"""
+    try:
+        # 세션 상태가 없으면 스킵 (앱 종료 시)
+        if 'model_status_tracker' not in st.session_state:
+            return
+            
+        tracker = st.session_state['model_status_tracker']
+        
+        if event_type == "loading_success":
+            # 로딩 성공시 새로고침 플래그 설정
+            tracker['need_refresh'] = True
+            tracker['last_check_time'] = time.time()
+            if model_name in tracker['loading_models']:
+                tracker['loading_models'].remove(model_name)
+            tracker['loaded_models'].add(model_name)
+            logger.info(f"로드 콜백: 모델 {model_name} 성공")
+            
+            # 즉시 UI 업데이트를 위한 추가 처리
+            try:
+                # UI 강제 업데이트를 위한 시간 마킹
+                tracker['force_ui_refresh'] = time.time()
+                logger.info(f"콜백: 모델 {model_name} 로딩 성공 - 새로고침 플래그 설정")
+            except Exception as inner_e:
+                logger.error(f"콜백 내부 처리 오류: {inner_e}")
+        elif event_type == "loading_failed":
+            # 로딩 실패시 로딩 목록에서 제거
+            if model_name in tracker['loading_models']:
+                tracker['loading_models'].remove(model_name)
+            logger.info(f"콜백: 모델 {model_name} 로딩 실패")
+        elif event_type == "loading_started":
+            # 로딩 시작시 로딩 목록에 추가
+            tracker['loading_models'].add(model_name)
+            logger.info(f"콜백: 모델 {model_name} 로딩 시작")
+    except Exception as e:
+        logger.error(f"모델 상태 콜백 오류: {e}")
+
+# 상태 추적기 정리 함수
+def cleanup_status_tracker():
+    """상태 추적기 정리"""
+    try:
+        if 'model_status_tracker' in st.session_state:
+            tracker = st.session_state['model_status_tracker']
+            tracker['check_active'] = False
+            tracker['loading_models'].clear()
+            tracker['need_refresh'] = False
+            logger.info("상태 추적기 정리 완료")
+    except Exception as e:
+        logger.error(f"상태 추적기 정리 오류: {e}")
+
+# 모델 매니저에 콜백 등록
+if not hasattr(st.session_state['model_manager'], '_streamlit_callback_registered'):
+    st.session_state['model_manager'].add_callback(model_status_callback)
+    st.session_state['model_manager']._streamlit_callback_registered = True
+    logger.info("모델 매니저에 Streamlit 콜백 등록 완료")
+
 # 로그인 상태 복원
 def load_login_token():
     if os.path.exists(LOGIN_FILE):
@@ -307,10 +376,12 @@ def render_system_monitoring():
             logger.info(f"[시스템모니터] 모니터링 시작 버튼 클릭됨")
             st.session_state['system_monitor'].start_monitoring()
             st.session_state['monitoring_active'] = True
+            st.session_state['refresh_count'] = 0  # 카운터 리셋
             logger.info(f"[시스템모니터] SystemMonitor.start_monitoring() 호출 완료")
             logger.info(f"[시스템모니터] monitoring_active = True 설정")
             save_app_state()  # 상태 저장
             logger.info(f"[시스템모니터] 모니터링 시작 완료")
+            st.rerun()  # 즉시 반영
     
     with col2:
         if st.button("⏹️ 모니터링 중지"):
@@ -362,15 +433,17 @@ def render_system_monitoring():
     is_monitoring_tab = current_tab == 'system_monitoring'
     
     if monitoring_active and auto_refresh_interval > 0:
-        # 갱신 카운터 초기화
+        # 갱신 카운터 초기화 (상태 저장 방지)
         if 'refresh_count' not in st.session_state:
             st.session_state['refresh_count'] = 0
-        st.session_state['refresh_count'] += 1
             
-        # 상태 표시 (단순화)
+        # 상태 표시 (단순화) - 카운터 증가 없이
         st.success(f"🔄 **실시간 차트 자동 갱신 활성화** ({auto_refresh_interval}초 간격)")
             
-        logger.info(f"[자동갱신] Plotly 실시간 차트 활성화 - {auto_refresh_interval}초 간격")
+        # 로그는 한 번만 출력
+        if st.session_state['refresh_count'] == 0:
+            logger.info(f"[자동갱신] Plotly 실시간 차트 활성화 - {auto_refresh_interval}초 간격")
+            st.session_state['refresh_count'] = 1
         
     elif monitoring_active and auto_refresh_interval > 0 and not is_monitoring_tab:
         st.info(f"🔄 자동 갱신 설정됨: {auto_refresh_interval}초 (시스템 모니터링 탭에서만 활성화)")
@@ -629,14 +702,17 @@ def render_realtime_system_charts():
     }}
     
     // 자동 갱신 타이머 설정
-    let refreshInterval = {auto_refresh_interval * 1000 if auto_refresh_interval > 0 else 3000};
+    let refreshInterval = {auto_refresh_interval * 1000 if auto_refresh_interval > 0 else 0};
     console.log('Starting realtime chart with interval:', refreshInterval + 'ms');
     
     // 즉시 첫 업데이트
     updateChartData();
     
-    // 주기적 업데이트
-    let chartTimer = setInterval(updateChartData, refreshInterval);
+    // 주기적 업데이트 (간격이 0보다 클 때만)
+    let chartTimer = null;
+    if (refreshInterval > 0) {{
+        chartTimer = setInterval(updateChartData, refreshInterval);
+    }}
     
     // 페이지 언로드시 타이머 정리
     window.addEventListener('beforeunload', function() {{
@@ -711,7 +787,7 @@ def render_model_management():
                         st.success(f"✅ 선택된 모델: `{selected_cached_model}`")
                     else:
                         st.session_state['selected_cached_model'] = '직접 입력'
-                        save_enhanced_app_state()
+                        save_app_state()
         
         # 모델 경로 입력 - 더 눈에 띄게
         st.markdown("#### 🔗 모델 경로 입력")
@@ -758,12 +834,36 @@ def render_model_management():
                 model_name = ""
                 
                 def load_callback(name, success, message):
-                    # 콜백에서 세션 상태 업데이트
-                    if success:
-                        st.session_state['load_success'] = f"모델 '{name}' 로드 성공!"
-                        st.session_state['load_complete'] = True
-                    else:
-                        st.session_state['load_error'] = f"모델 '{name}' 로드 실패: {message}"
+                    # 콜백에서 세션 상태 업데이트 및 즉시 새로고침 트리거 (스레드 안전)
+                    try:
+                        if success:
+                            st.session_state['load_success'] = f"모델 '{name}' 로드 성공!"
+                            st.session_state['load_complete'] = True
+                            logger.info(f"로드 콜백: 모델 {name} 성공")
+                            
+                            # 상태 추적기 안전하게 접근 및 업데이트
+                            if 'model_status_tracker' in st.session_state:
+                                tracker = st.session_state['model_status_tracker']
+                                tracker['force_ui_refresh'] = time.time()  # 강제 새로고침 플래그
+                                tracker['need_refresh'] = True  # 새로고침 필요 플래그
+                            else:
+                                # tracker가 없으면 새로 생성
+                                st.session_state['model_status_tracker'] = {
+                                    'force_ui_refresh': time.time(),
+                                    'need_refresh': True,
+                                    'check_active': True,
+                                    'loading_models': set(),
+                                    'previous_loaded': set(),
+                                    'last_status_check': 0
+                                }
+                            
+                        else:
+                            st.session_state['load_error'] = f"모델 '{name}' 로드 실패: {message}"
+                            st.session_state['load_complete'] = True
+                            logger.error(f"로드 콜백: 모델 {name} 실패 - {message}")
+                    except Exception as e:
+                        logger.error(f"로드 콜백 오류: {e}")
+                        st.session_state['load_error'] = f"콜백 처리 오류: {e}"
                         st.session_state['load_complete'] = True
                 
                 st.session_state['model_manager'].load_model_async(
@@ -773,6 +873,20 @@ def render_model_management():
                 
                 # 자동 새로고침 체크 시작
                 st.session_state['check_loading'] = True
+                # 상태 추적기 업데이트
+                tracker = st.session_state['model_status_tracker']
+                tracker['check_active'] = True
+                tracker['last_status_check'] = time.time()  # 상태 확인 타이머 초기화
+                
+                # 현재 로드된 모델 목록 저장 (비교용)
+                current_status = st.session_state['model_manager'].get_all_models_status()
+                tracker['previous_loaded'] = set([name for name, info in current_status.items() if info['status'] == 'loaded'])
+                
+                # 즉시 상태를 확인하여 로딩 모델 목록 업데이트
+                current_loading = set([name for name, info in current_status.items() if info['status'] == 'loading'])
+                if not hasattr(tracker, 'loading_models') or not isinstance(tracker.get('loading_models'), set):
+                    tracker['loading_models'] = set()
+                tracker['loading_models'].update(current_loading)
                 
                 # 캐시 자동 스캔 (HuggingFace 모델 ID인 경우)
                 if st.session_state['model_manager']._is_huggingface_model_id(model_path):
@@ -790,28 +904,124 @@ def render_model_management():
         if clear_clicked:
             st.session_state['model_path_input'] = ""
             st.session_state['current_model_analysis'] = None
+            st.session_state['auto_analysis_attempted'] = False  # 자동 분석 플래그 리셋
+            st.session_state['auto_analysis_in_progress'] = False  # 진행 중 플래그 리셋
             save_app_state()  # 상태 저장
             st.rerun()
     
     # 구분선
     st.markdown("---")
     
+    # 자동 상태 확인 및 새로고침 처리
+    current_time = time.time()
+    tracker = st.session_state.get('model_status_tracker', {})
+    
+    # 현재 로드된 모델 상태 확인
+    models_status = st.session_state['model_manager'].get_all_models_status()
+    current_loaded = set([name for name, info in models_status.items() if info['status'] == 'loaded'])
+    previous_loaded = tracker.get('previous_loaded', set())
+    
+    # 초기 상태 확인 로깅
+    if current_loaded or any(info['status'] in ['loading', 'loaded'] for info in models_status.values()):
+        logger.info(f"초기 상태 확인: loaded={current_loaded}, previous={previous_loaded}, all_status={models_status}")
+    
+    if current_loaded != previous_loaded:
+        # 상태 변화 감지됨 - 즉시 처리
+        newly_loaded = current_loaded - previous_loaded
+        if newly_loaded:
+            tracker['previous_loaded'] = current_loaded
+            st.success(f"🎉 모델 상태 변화 감지: {', '.join(newly_loaded)} 로드 완료!")
+            scan_cache()  # 캐시 새로고침
+            st.rerun()
+    
+    # 강제 새로고침 확인 (콜백으로부터) - 더 빠른 반응
+    if tracker.get('force_ui_refresh', 0) > 0 and current_time - tracker.get('force_ui_refresh', 0) < 5:
+        logger.info("강제 UI 새로고침 신호 감지")
+        tracker['force_ui_refresh'] = 0  # 플래그 초기화
+        tracker['need_refresh'] = True  # 새로고침 플래그 활성화
+        
+        # 즉시 모델 상태 확인하여 변화 감지
+        models_status = st.session_state['model_manager'].get_all_models_status()
+        current_loaded_immediate = set([name for name, info in models_status.items() if info['status'] == 'loaded'])
+        previous_loaded_immediate = tracker.get('previous_loaded', set())
+        
+        if current_loaded_immediate != previous_loaded_immediate:
+            newly_loaded = current_loaded_immediate - previous_loaded_immediate
+            if newly_loaded:
+                tracker['previous_loaded'] = current_loaded_immediate
+                st.success(f"🎉 모델 로드 완료: {', '.join(newly_loaded)}!")
+                scan_cache()  # 캐시 새로고침
+                st.rerun()
+
+    # 스레드 안전한 자동 새로고침 처리 (모델 로드 성공 시)
+    if tracker.get('need_refresh', False):
+        try:
+            st.session_state['model_status_tracker']['need_refresh'] = False
+            logger.info("새로고침 플래그 감지 - 캐시 스캔 시작")
+            # 캐시 스캔 실행 (상태 새로고침)
+            scan_cache()
+            newly_loaded = tracker.get('loaded_models', set()) - tracker.get('previous_loaded', set())
+            if newly_loaded:
+                st.success(f"✅ 모델 로드 완료: {', '.join(newly_loaded)}! 상태가 자동으로 새로고침되었습니다.")
+                tracker['previous_loaded'] = tracker.get('loaded_models', set()).copy()
+                logger.info(f"자동 새로고침 완료: {newly_loaded}")
+            else:
+                st.success("✅ 모델 로드 완료! 상태가 자동으로 새로고침되었습니다.")
+                logger.info("자동 새로고침 완료")
+            time.sleep(0.1)  # UI 업데이트 대기
+            st.rerun()
+        except Exception as e:
+            logger.error(f"자동 새로고침 오류: {e}")
+    
+    # 정기적 모델 상태 확인 (1초마다, 로딩 중일 때는 더 자주)
+    check_interval = 0.5 if tracker.get('loading_models') else 2  # 로딩 중이면 0.5초, 아니면 2초
+    if (tracker.get('check_active', False) and 
+        current_time - tracker.get('last_status_check', 0) > check_interval):
+        
+        # 모델 상태 확인
+        models_status = st.session_state['model_manager'].get_all_models_status()
+        current_loaded = set([name for name, info in models_status.items() if info['status'] == 'loaded'])
+        current_loading = set([name for name, info in models_status.items() if info['status'] == 'loading'])
+        previous_loaded = tracker.get('previous_loaded', set())
+        
+        # 디버깅 로그 추가
+        if current_loading or current_loaded:
+            logger.info(f"상태 확인: loaded={current_loaded}, loading={current_loading}, previous={previous_loaded}")
+        
+        # 로딩 모델 목록 업데이트
+        tracker['loading_models'] = current_loading
+        
+        if current_loaded != previous_loaded:
+            # 상태 변화 감지됨
+            newly_loaded = current_loaded - previous_loaded
+            if newly_loaded:
+                logger.info(f"새로운 모델 로드 감지: {newly_loaded}")
+                tracker['previous_loaded'] = current_loaded
+                tracker['last_status_check'] = current_time
+                # 로딩 완료된 모델들 제거
+                tracker['loading_models'] = tracker['loading_models'] - newly_loaded
+                scan_cache()
+                st.success(f"🎉 모델 로드 완료: {', '.join(newly_loaded)}! 상태를 새로고침했습니다.")
+                st.rerun()
+        
+        tracker['last_status_check'] = current_time
+    
     # 로드 완료 메시지 표시 및 자동 새로고침
     if st.session_state.get('load_complete', False):
         if 'load_success' in st.session_state:
             st.success(st.session_state['load_success'])
             del st.session_state['load_success']
+            # 로드 성공 시 즉시 캐시 스캔 및 상태 업데이트
+            scan_cache()
         if 'load_error' in st.session_state:
             st.error(st.session_state['load_error'])
             del st.session_state['load_error']
         st.session_state['load_complete'] = False
         st.rerun()
     
-    # 페이지 로드 시 자동 새로고침 체크 (로딩 상태 폴링)
+    # 개선된 모델 로딩 상태 폴링
     if st.session_state.get('check_loading', False):
-        # 짧은 간격으로 모델 상태 확인
-        import time
-        time.sleep(1)
+        tracker = st.session_state['model_status_tracker']
         
         # 모델 상태 확인
         models_status = st.session_state['model_manager'].get_all_models_status()
@@ -820,9 +1030,20 @@ def render_model_management():
         if not loading_models:
             # 로딩 중인 모델이 없으면 체크 중단
             st.session_state['check_loading'] = False
-        
-        # 자동 새로고침
-        st.rerun()
+            tracker['check_active'] = False
+            tracker['loading_models'].clear()
+            
+            # 새로고침이 아직 처리되지 않았다면 처리
+            if not tracker.get('need_refresh', False):
+                st.info("🎉 모든 모델 로딩 작업이 완료되었습니다.")
+            st.rerun()
+        else:
+            # 로딩 중인 모델이 있을 때만 상태 표시 및 자동 새로고침
+            st.info(f"⏳ 모델 로딩 중: {', '.join(loading_models)}")
+            
+            # 즉시 새로고침 (로딩 중일 때)
+            time.sleep(1)  # 1초 대기
+            st.rerun()
     
     # 모델 분석 결과 표시
     if st.session_state['current_model_analysis']:
@@ -1234,6 +1455,86 @@ def render_fastapi_server():
 def main():
     st.title("🚀 Hugging Face GUI")
     
+    # 한 번만 실행되는 자동 복원 로직
+    if st.session_state['logged_in'] and not st.session_state.get('auto_restoration_done', False):
+        # 복원 상태 추적
+        restoration_success = []
+        restoration_failed = []
+        
+        # 캐시 상태 복원
+        cache_scanned_state = st.session_state.get('cache_scanned', False)
+        cache_info_exists = st.session_state.get('cache_info') is not None
+        revisions_count = len(st.session_state.get('revisions_df', pd.DataFrame()))
+        
+        logger.info(f"캐시 복원 체크: cache_scanned={cache_scanned_state}, cache_info_exists={cache_info_exists}, revisions_count={revisions_count}")
+        
+        # cache_scanned=True인데 실제 캐시 데이터가 없는 경우 자동 복원
+        if cache_scanned_state and (not cache_info_exists or revisions_count == 0):
+            logger.info("캐시 스캔됨 상태이지만 cache_info 또는 revisions_df 없음 - 자동 재스캔")
+            try:
+                scan_cache()
+                restoration_success.append("캐시 자동 복원")
+                logger.info("캐시 자동 복원 성공")
+            except Exception as e:
+                restoration_failed.append(f"캐시 복원 ({str(e)})")
+                st.session_state['cache_scanned'] = False
+                logger.error(f"캐시 자동 복원 실패: {e}")
+        elif not cache_scanned_state and not cache_info_exists:
+            logger.info("첫 로그인 - 자동 캐시 스캔")
+            # 첫 로그인 시 자동 캐시 스캔
+            try:
+                scan_cache()
+                st.session_state['cache_scanned'] = True
+                logger.info("첫 로그인 캐시 스캔 완료")
+            except Exception as e:
+                st.session_state['cache_scanned'] = False
+                logger.error(f"첫 로그인 캐시 스캔 실패: {e}")
+        else:
+            logger.info(f"캐시 복원 불필요: cache_scanned={cache_scanned_state}, cache_info_exists={cache_info_exists}, revisions_count={revisions_count}")
+        
+        # 모니터링 상태 복원
+        monitoring_active = st.session_state.get('monitoring_active', False)
+        logger.info(f"모니터링 복원 체크: monitoring_active={monitoring_active}")
+        
+        if monitoring_active:
+            try:
+                if not st.session_state['system_monitor'].monitoring:
+                    st.session_state['system_monitor'].start_monitoring()
+                    restoration_success.append("시스템 모니터링")
+                    logger.info("시스템 모니터링 자동 복원 성공")
+                else:
+                    logger.info("시스템 모니터링 이미 실행 중")
+            except Exception as e:
+                st.session_state['monitoring_active'] = False
+                restoration_failed.append(f"시스템 모니터링 ({str(e)})")
+                logger.error(f"시스템 모니터링 자동 복원 실패: {e}")
+        
+        # FastAPI 서버 상태 복원
+        server_running = st.session_state.get('fastapi_server_running', False)
+        logger.info(f"서버 복원 체크: fastapi_server_running={server_running}")
+        
+        if server_running:
+            try:
+                if not st.session_state['fastapi_server'].is_running():
+                    st.session_state['fastapi_server'].start_server()
+                    restoration_success.append("FastAPI 서버")
+                    logger.info("FastAPI 서버 자동 복원 성공")
+                else:
+                    logger.info("FastAPI 서버 이미 실행 중")
+            except Exception as e:
+                st.session_state['fastapi_server_running'] = False
+                restoration_failed.append(f"FastAPI 서버 ({str(e)})")
+                logger.error(f"FastAPI 서버 자동 복원 실패: {e}")
+        
+        # 복원 결과 저장
+        st.session_state['restoration_success'] = restoration_success
+        st.session_state['restoration_failed'] = restoration_failed
+        st.session_state['auto_restoration_done'] = True  # 복원 완료 플래그
+        
+        # 복원 후 한 번만 상태 저장
+        if restoration_success or restoration_failed:
+            save_app_state()
+    
     # 복원 상태 알림 표시
     if st.session_state['logged_in']:
         restoration_success = st.session_state.get('restoration_success', [])
@@ -1360,7 +1661,7 @@ def main():
             if st.session_state.get('cache_scanned', False) and st.session_state['cache_info']:
                 if st.button("🔄 캐시 재스캔"):
                     scan_cache()
-                    save_enhanced_app_state()
+                    save_app_state()
                     st.rerun()
         
         if st.session_state['cache_info']:
@@ -1464,7 +1765,7 @@ def main():
         with col2:
             if st.button("💾 상태 강제 저장"):
                 logger.info("수동 상태 저장 요청")
-                save_enhanced_app_state()
+                save_app_state()
                 st.success("상태 저장 완료")
         
         with col3:
@@ -1545,87 +1846,9 @@ def show_restoration_status():
         return True
     return False
 
-# 프로그램 시작 시 로그인 상태 확인 및 상태 복원
+# 프로그램 시작 시 로그인 상태 확인
 if st.session_state['logged_in']:
     api.set_access_token(st.session_state['token'])
-    
-    # 복원 상태 추적
-    restoration_success = []
-    restoration_failed = []
-    
-    # 캐시 상태 복원
-    cache_scanned_state = st.session_state.get('cache_scanned', False)
-    cache_info_exists = st.session_state.get('cache_info') is not None
-    revisions_count = len(st.session_state.get('revisions_df', pd.DataFrame()))
-    
-    logger.info(f"캐시 복원 체크: cache_scanned={cache_scanned_state}, cache_info_exists={cache_info_exists}, revisions_count={revisions_count}")
-    
-    # cache_scanned=True인데 실제 캐시 데이터가 없는 경우 자동 복원
-    if cache_scanned_state and (not cache_info_exists or revisions_count == 0):
-        logger.info("캐시 스캔됨 상태이지만 cache_info 또는 revisions_df 없음 - 자동 재스캔")
-        try:
-            scan_cache()
-            restoration_success.append("캐시 자동 복원")
-            logger.info("캐시 자동 복원 성공")
-        except Exception as e:
-            restoration_failed.append(f"캐시 복원 ({str(e)})")
-            st.session_state['cache_scanned'] = False
-            save_enhanced_app_state()
-            logger.error(f"캐시 자동 복원 실패: {e}")
-    elif not cache_scanned_state and not cache_info_exists:
-        logger.info("첫 로그인 - 자동 캐시 스캔")
-        # 첫 로그인 시 자동 캐시 스캔
-        try:
-            scan_cache()
-            st.session_state['cache_scanned'] = True
-            save_enhanced_app_state()
-            logger.info("첫 로그인 캐시 스캔 완료")
-        except Exception as e:
-            st.session_state['cache_scanned'] = False
-            save_enhanced_app_state()
-            logger.error(f"첫 로그인 캐시 스캔 실패: {e}")
-    else:
-        logger.info(f"캐시 복원 불필요: cache_scanned={cache_scanned_state}, cache_info_exists={cache_info_exists}, revisions_count={revisions_count}")
-    
-    # 모니터링 상태 복원
-    monitoring_active = st.session_state.get('monitoring_active', False)
-    logger.info(f"모니터링 복원 체크: monitoring_active={monitoring_active}")
-    
-    if monitoring_active:
-        try:
-            if not st.session_state['system_monitor'].monitoring:
-                st.session_state['system_monitor'].start_monitoring()
-                restoration_success.append("시스템 모니터링")
-                logger.info("시스템 모니터링 자동 복원 성공")
-            else:
-                logger.info("시스템 모니터링 이미 실행 중")
-        except Exception as e:
-            st.session_state['monitoring_active'] = False
-            restoration_failed.append(f"시스템 모니터링 ({str(e)})")
-            save_enhanced_app_state()
-            logger.error(f"시스템 모니터링 자동 복원 실패: {e}")
-    
-    # FastAPI 서버 상태 복원
-    server_running = st.session_state.get('fastapi_server_running', False)
-    logger.info(f"서버 복원 체크: fastapi_server_running={server_running}")
-    
-    if server_running:
-        try:
-            if not st.session_state['fastapi_server'].is_running():
-                st.session_state['fastapi_server'].start_server()
-                restoration_success.append("FastAPI 서버")
-                logger.info("FastAPI 서버 자동 복원 성공")
-            else:
-                logger.info("FastAPI 서버 이미 실행 중")
-        except Exception as e:
-            st.session_state['fastapi_server_running'] = False
-            restoration_failed.append(f"FastAPI 서버 ({str(e)})")
-            save_enhanced_app_state()
-            logger.error(f"FastAPI 서버 자동 복원 실패: {e}")
-    
-    # 복원 결과 저장 (메인 함수에서 표시용)
-    st.session_state['restoration_success'] = restoration_success
-    st.session_state['restoration_failed'] = restoration_failed
 
 if __name__ == "__main__":
     main()
