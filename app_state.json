@@ -1,0 +1,12 @@
+{
+  "model_path_input": "tabularisai/multilingual-sentiment-analysis",
+  "current_model_analysis": null,
+  "auto_refresh_interval": 3,
+  "selected_cached_model": "tabularisai/multilingual-sentiment-analysis",
+  "cache_expanded": false,
+  "monitoring_active": true,
+  "fastapi_server_running": false,
+  "cache_scanned": true,
+  "cache_info_saved": true,
+  "revisions_count": 1
+}
