@@ -877,11 +877,60 @@ system_data_labels['time_label'].pack(pady=5)
 # 네 번째 탭: 모델 관리
 tab_models = tab_view.add("모델 관리")
 
-# 캐시된 모델 선택 프레임
-cache_select_frame = ctk.CTkFrame(tab_models)
-cache_select_frame.pack(pady=10, padx=10, fill="x")
+# 메인 제목
+main_title = ctk.CTkLabel(tab_models, text="🤖 모델 관리", font=("Arial", 18, "bold"))
+main_title.pack(pady=(10, 20))
 
-ctk.CTkLabel(cache_select_frame, text="🗂️ 캐시된 모델에서 선택:", font=("Arial", 12, "bold")).pack(pady=5)
+# 새 모델 로드 섹션
+new_model_section = ctk.CTkFrame(tab_models)
+new_model_section.pack(pady=(0, 20), padx=20, fill="x")
+
+# 새 모델 로드 제목
+new_model_title = ctk.CTkLabel(new_model_section, text="📥 새 모델 로드", font=("Arial", 14, "bold"))
+new_model_title.pack(pady=(15, 10))
+
+# 모델 경로 입력 프레임
+model_input_container = ctk.CTkFrame(new_model_section)
+model_input_container.pack(pady=(0, 15), padx=20, fill="x")
+
+# 모델 경로 라벨과 입력 필드
+path_label = ctk.CTkLabel(model_input_container, text="모델 경로 또는 HuggingFace 모델 ID:", font=("Arial", 12, "bold"))
+path_label.pack(pady=(10, 5), anchor="w")
+
+entry_model_path = ctk.CTkEntry(
+    model_input_container, 
+    width=600, 
+    height=40,
+    placeholder_text="예: tabularisai/multilingual-sentiment-analysis 또는 /path/to/local/model",
+    font=("Arial", 12)
+)
+entry_model_path.pack(pady=(0, 10), padx=10, fill="x")
+
+# 캐시된 모델 선택 (접기/펼치기 버튼)
+cache_section_frame = ctk.CTkFrame(new_model_section)
+cache_section_frame.pack(pady=(0, 15), padx=20, fill="x")
+
+cache_visible = ctk.BooleanVar(value=False)
+
+def toggle_cache_section():
+    if cache_visible.get():
+        cache_content_frame.pack_forget()
+        cache_toggle_btn.configure(text="🗂️ 캐시된 모델에서 선택 ▼")
+        cache_visible.set(False)
+    else:
+        cache_content_frame.pack(fill="x", pady=(10, 0))
+        cache_toggle_btn.configure(text="🗂️ 캐시된 모델에서 선택 ▲")
+        cache_visible.set(True)
+
+cache_toggle_btn = ctk.CTkButton(
+    cache_section_frame, 
+    text="🗂️ 캐시된 모델에서 선택 ▼", 
+    command=toggle_cache_section,
+    font=("Arial", 12)
+)
+cache_toggle_btn.pack(pady=10)
+
+cache_content_frame = ctk.CTkFrame(cache_section_frame)
 
 # 캐시된 모델 목록 가져오기
 def get_cached_models():
@@ -891,12 +940,14 @@ def get_cached_models():
 
 cached_models_var = ctk.StringVar(value="직접 입력")
 cached_models_menu = ctk.CTkOptionMenu(
-    cache_select_frame, 
+    cache_content_frame, 
     variable=cached_models_var,
     values=["직접 입력"] + get_cached_models(),
-    command=lambda choice: update_model_path_from_cache(choice)
+    command=lambda choice: update_model_path_from_cache(choice),
+    width=300,
+    height=35
 )
-cached_models_menu.pack(pady=5)
+cached_models_menu.pack(pady=10)
 
 def update_model_path_from_cache(choice):
     if choice != "직접 입력":
@@ -907,52 +958,127 @@ def update_model_path_from_cache(choice):
 def refresh_cached_models():
     cached_models_menu.configure(values=["직접 입력"] + get_cached_models())
 
-# 모델 입력 프레임
-model_input_frame = ctk.CTkFrame(tab_models)
-model_input_frame.pack(pady=10, padx=10, fill="x")
+# 입력 필드 지우기 및 동작 버튼들
+action_buttons_frame = ctk.CTkFrame(new_model_section)
+action_buttons_frame.pack(pady=(0, 15), padx=20, fill="x")
 
-ctk.CTkLabel(model_input_frame, text="모델 경로 (로컬 경로 또는 HuggingFace 모델 ID):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-entry_model_path = ctk.CTkEntry(model_input_frame, width=400, placeholder_text="예: tabularisai/multilingual-sentiment-analysis")
-entry_model_path.grid(row=0, column=1, padx=5, pady=5)
+# 입력 필드 지우기 버튼
+def clear_model_input():
+    entry_model_path.delete(0, tk.END)
+    cached_models_var.set("직접 입력")
 
-# 모델 버튼들
-model_buttons_frame = ctk.CTkFrame(tab_models)
-model_buttons_frame.pack(pady=10)
+clear_btn = ctk.CTkButton(
+    action_buttons_frame, 
+    text="🗑️ 입력 지우기", 
+    command=clear_model_input,
+    width=120,
+    height=35
+)
+clear_btn.pack(side="left", padx=5, pady=10)
 
-analyze_model_btn = ctk.CTkButton(model_buttons_frame, text="모델 분석", command=analyze_model)
-analyze_model_btn.pack(side="left", padx=5)
+# 모델 분석 버튼
+analyze_model_btn = ctk.CTkButton(
+    action_buttons_frame, 
+    text="🔍 모델 분석", 
+    command=analyze_model,
+    width=120,
+    height=35
+)
+analyze_model_btn.pack(side="left", padx=5, pady=10)
 
-load_model_btn = ctk.CTkButton(model_buttons_frame, text="모델 로드", command=load_model)
-load_model_btn.pack(side="left", padx=5)
+# 모델 로드 버튼 (primary)
+load_model_btn = ctk.CTkButton(
+    action_buttons_frame, 
+    text="📁 모델 로드", 
+    command=load_model,
+    width=120,
+    height=35,
+    fg_color="#1f538d"
+)
+load_model_btn.pack(side="left", padx=5, pady=10)
 
-unload_model_btn = ctk.CTkButton(model_buttons_frame, text="모델 언로드", command=unload_model)
-unload_model_btn.pack(side="left", padx=5)
+# 목록 새로고침 버튼
+update_lists_btn = ctk.CTkButton(
+    action_buttons_frame, 
+    text="🔄 새로고침", 
+    command=update_model_lists,
+    width=120,
+    height=35
+)
+update_lists_btn.pack(side="left", padx=5, pady=10)
 
-update_lists_btn = ctk.CTkButton(model_buttons_frame, text="목록 새로고침", command=update_model_lists)
-update_lists_btn.pack(side="left", padx=5)
+# 관리 섹션
+management_section = ctk.CTkFrame(tab_models)
+management_section.pack(pady=(0, 20), padx=20, fill="x")
 
-details_btn = ctk.CTkButton(model_buttons_frame, text="상세 정보", command=show_model_details)
-details_btn.pack(side="left", padx=5)
+management_title = ctk.CTkLabel(management_section, text="⚙️ 모델 관리", font=("Arial", 14, "bold"))
+management_title.pack(pady=(15, 10))
 
-# 모델 목록 표시
-models_display_frame = ctk.CTkFrame(tab_models)
-models_display_frame.pack(fill="both", expand=True, padx=10, pady=10)
+# 관리 버튼들
+management_buttons_frame = ctk.CTkFrame(management_section)
+management_buttons_frame.pack(pady=(0, 15), padx=20, fill="x")
+
+unload_model_btn = ctk.CTkButton(
+    management_buttons_frame, 
+    text="📤 모델 언로드", 
+    command=unload_model,
+    width=120,
+    height=35
+)
+unload_model_btn.pack(side="left", padx=5, pady=10)
+
+details_btn = ctk.CTkButton(
+    management_buttons_frame, 
+    text="📊 상세 정보", 
+    command=show_model_details,
+    width=120,
+    height=35
+)
+details_btn.pack(side="left", padx=5, pady=10)
+
+# 모델 목록 표시 섹션
+models_display_section = ctk.CTkFrame(tab_models)
+models_display_section.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+
+# 모델 목록 제목
+models_list_title = ctk.CTkLabel(models_display_section, text="📋 모델 목록", font=("Arial", 14, "bold"))
+models_list_title.pack(pady=(15, 10))
+
+# 모델 목록 표시 프레임
+models_display_frame = ctk.CTkFrame(models_display_section)
+models_display_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
 
 # 로드된 모델 목록
 loaded_models_frame = ctk.CTkFrame(models_display_frame)
-loaded_models_frame.pack(side="left", fill="both", expand=True, padx=5)
+loaded_models_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
 
-ctk.CTkLabel(loaded_models_frame, text="로드된 모델", font=("Arial", 14, "bold")).pack(pady=5)
-loaded_models_listbox = tk.Listbox(loaded_models_frame, height=10)
-loaded_models_listbox.pack(fill="both", expand=True, padx=5, pady=5)
+loaded_models_title = ctk.CTkLabel(loaded_models_frame, text="✅ 로드된 모델", font=("Arial", 12, "bold"), text_color="green")
+loaded_models_title.pack(pady=(10, 5))
+
+loaded_models_listbox = tk.Listbox(
+    loaded_models_frame, 
+    height=12,
+    font=("Arial", 10),
+    selectmode=tk.SINGLE,
+    activestyle='dotbox'
+)
+loaded_models_listbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
 # 전체 모델 목록
 all_models_frame = ctk.CTkFrame(models_display_frame)
-all_models_frame.pack(side="right", fill="both", expand=True, padx=5)
+all_models_frame.pack(side="right", fill="both", expand=True, padx=(10, 0))
 
-ctk.CTkLabel(all_models_frame, text="전체 모델", font=("Arial", 14, "bold")).pack(pady=5)
-model_listbox = tk.Listbox(all_models_frame, height=10)
-model_listbox.pack(fill="both", expand=True, padx=5, pady=5)
+all_models_title = ctk.CTkLabel(all_models_frame, text="📦 전체 모델", font=("Arial", 12, "bold"))
+all_models_title.pack(pady=(10, 5))
+
+model_listbox = tk.Listbox(
+    all_models_frame, 
+    height=12,
+    font=("Arial", 10),
+    selectmode=tk.SINGLE,
+    activestyle='dotbox'
+)
+model_listbox.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
 # 다섯 번째 탭: FastAPI 서버
 tab_server = tab_view.add("FastAPI 서버")

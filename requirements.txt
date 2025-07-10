@@ -13,3 +13,4 @@ uvicorn>=0.22.0
 safetensors>=0.3.0
 matplotlib>=3.5.0
 accelerate>=0.20.0
+streamlit-js-eval>=0.1.0

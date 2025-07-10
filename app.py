@@ -7,7 +7,34 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import time
 import json
+import base64
+import logging
 from datetime import datetime
+
+# 로깅 설정 (watchdog 등 외부 라이브러리 로그 제외)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('app_debug.log', mode='w'),  # 파일 덮어쓰기
+        logging.StreamHandler()
+    ]
+)
+
+# 외부 라이브러리 로그 레벨 조정
+logging.getLogger('watchdog').setLevel(logging.WARNING)
+logging.getLogger('streamlit').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('requests').setLevel(logging.WARNING)
+
+logger = logging.getLogger('HF_GUI')
+
+# 브라우저 localStorage 통합 (임시 비활성화)
+try:
+    from streamlit_js_eval import streamlit_js_eval
+    LOCALSTORAGE_AVAILABLE = False  # 임시로 비활성화
+except ImportError:
+    LOCALSTORAGE_AVAILABLE = False
 
 # 새로운 모듈들 import
 from model_manager import MultiModelManager
@@ -17,6 +44,7 @@ from model_analyzer import ComprehensiveModelAnalyzer
 
 # 로그인 상태를 저장할 파일 경로 설정
 LOGIN_FILE = "login_token.txt"
+STATE_FILE = "app_state.json"
 
 # Hugging Face API 인스턴스 생성
 api = HfApi()
@@ -53,6 +81,157 @@ def delete_login_token():
     if os.path.exists(LOGIN_FILE):
         os.remove(LOGIN_FILE)
 
+# 앱 상태 저장
+def save_app_state():
+    logger.info("=== 상태 저장 시작 ===")
+    
+    state = {
+        'model_path_input': st.session_state.get('model_path_input', ''),
+        'current_model_analysis': st.session_state.get('current_model_analysis', None),
+        'auto_refresh_interval': st.session_state.get('auto_refresh_interval', 0),
+        'selected_cached_model': st.session_state.get('selected_cached_model', '직접 입력'),
+        'cache_expanded': st.session_state.get('cache_expanded', False),
+        'monitoring_active': st.session_state.get('monitoring_active', False),
+        'fastapi_server_running': st.session_state.get('fastapi_server_running', False),
+        'cache_scanned': st.session_state.get('cache_scanned', False),
+        'cache_info_saved': st.session_state.get('cache_info') is not None,
+        'revisions_count': len(st.session_state.get('revisions_df', pd.DataFrame()))
+    }
+    
+    logger.info(f"저장할 상태: {state}")
+    
+    try:
+        with open(STATE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(state, f, ensure_ascii=False, indent=2, default=str)
+        logger.info(f"상태 파일 저장 성공: {STATE_FILE}")
+    except Exception as e:
+        logger.error(f"상태 저장 실패: {e}")
+        st.error(f"상태 저장 실패: {e}")
+
+# 앱 상태 복원
+def load_app_state():
+    logger.info("=== 상태 복원 시작 ===")
+    
+    if os.path.exists(STATE_FILE):
+        logger.info(f"상태 파일 발견: {STATE_FILE}")
+        try:
+            with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                state = json.load(f)
+                
+            logger.info(f"로드된 상태: {state}")
+            
+            # 세션 상태 복원
+            restored_count = 0
+            for key, value in state.items():
+                if key not in st.session_state:
+                    st.session_state[key] = value
+                    restored_count += 1
+                    logger.info(f"복원됨: {key} = {value}")
+                else:
+                    logger.info(f"이미 존재: {key} = {st.session_state[key]}")
+            
+            logger.info(f"총 {restored_count}개 상태 복원 완료")
+            return True
+        except Exception as e:
+            logger.error(f"상태 복원 실패: {e}")
+            st.error(f"상태 복원 실패: {e}")
+    else:
+        logger.info(f"상태 파일 없음: {STATE_FILE}")
+    return False
+
+# 앱 상태 삭제
+def delete_app_state():
+    if os.path.exists(STATE_FILE):
+        os.remove(STATE_FILE)
+
+# 브라우저 localStorage 함수들
+def save_to_browser_storage(key: str, value: str):
+    """브라우저 localStorage에 데이터 저장 (base64 인코딩)"""
+    if LOCALSTORAGE_AVAILABLE:
+        try:
+            # base64 인코딩으로 안전하게 저장
+            encoded_value = base64.b64encode(value.encode('utf-8')).decode('ascii')
+            js_code = f"localStorage.setItem('{key}', '{encoded_value}'); 'success'"
+            return streamlit_js_eval(js_code, key="browser_save")
+        except Exception as e:
+            st.error(f"브라우저 저장 실패: {e}")
+    return None
+
+def load_from_browser_storage(key: str):
+    """브라우저 localStorage에서 데이터 로드 (base64 디코딩)"""
+    if LOCALSTORAGE_AVAILABLE:
+        try:
+            js_code = f"localStorage.getItem('{key}')"
+            encoded_value = streamlit_js_eval(js_code, key="browser_load")
+            if encoded_value and encoded_value != 'null':
+                # base64 디코딩
+                decoded_value = base64.b64decode(encoded_value.encode('ascii')).decode('utf-8')
+                return decoded_value
+        except Exception as e:
+            st.error(f"브라우저 로드 실패: {e}")
+    return None
+
+def clear_browser_storage():
+    """브라우저 localStorage 전체 정리"""
+    if LOCALSTORAGE_AVAILABLE:
+        try:
+            js_code = "localStorage.clear(); 'cleared'"
+            return streamlit_js_eval(js_code, key="browser_clear")
+        except Exception as e:
+            st.error(f"브라우저 정리 실패: {e}")
+    return None
+
+# 통합 상태 저장 (파일 기반)
+def save_enhanced_app_state():
+    """강화된 파일 기반 상태 저장"""
+    # 파일 저장 (더 많은 상태 정보 포함)
+    save_app_state()
+    
+    # 브라우저 저장 (현재 비활성화)
+    if LOCALSTORAGE_AVAILABLE:
+        ui_state = {
+            'cache_scanned': st.session_state.get('cache_scanned', False),
+            'monitoring_active': st.session_state.get('monitoring_active', False),
+            'fastapi_server_running': st.session_state.get('fastapi_server_running', False),
+            'model_path_input': st.session_state.get('model_path_input', ''),
+            'selected_cached_model': st.session_state.get('selected_cached_model', '직접 입력')
+        }
+        save_to_browser_storage('hf_gui_state', json.dumps(ui_state))
+
+# 통합 상태 복원 (파일 기반)
+def load_enhanced_app_state():
+    """강화된 파일 기반 상태 복원"""
+    logger.info("=== load_enhanced_app_state 시작 ===")
+    restored = False
+    
+    # 브라우저에서 복원 시도 (현재 비활성화)
+    if LOCALSTORAGE_AVAILABLE:
+        logger.info("브라우저 저장소 복원 시도")
+        browser_state = load_from_browser_storage('hf_gui_state')
+        if browser_state:
+            try:
+                ui_state = json.loads(browser_state)
+                for key, value in ui_state.items():
+                    if key not in st.session_state:
+                        st.session_state[key] = value
+                        restored = True
+                        logger.info(f"브라우저에서 복원: {key} = {value}")
+            except Exception as e:
+                logger.error(f"브라우저 상태 복원 실패: {e}")
+                st.error(f"브라우저 상태 복원 실패: {e}")
+    else:
+        logger.info("브라우저 저장소 비활성화됨")
+    
+    # 파일에서 복원
+    if not restored:
+        logger.info("파일 기반 복원 시도")
+        restored = load_app_state()
+    else:
+        logger.info("브라우저 복원 성공, 파일 복원 스킵")
+    
+    logger.info(f"=== load_enhanced_app_state 완료, restored={restored} ===")
+    return restored
+
 # Streamlit 페이지 설정
 st.set_page_config(
     page_title="Hugging Face GUI",
@@ -76,6 +255,16 @@ if 'revisions_df' not in st.session_state:
 if 'current_model_analysis' not in st.session_state:
     st.session_state['current_model_analysis'] = None
 
+# 앱 상태 복원 (브라우저 우선)
+if 'state_loaded' not in st.session_state:
+    logger.info("=== 앱 초기화: 상태 로드 시작 ===")
+    load_enhanced_app_state()
+    st.session_state['state_loaded'] = True
+    logger.info(f"상태 로드 완료. cache_scanned = {st.session_state.get('cache_scanned', 'NOT_SET')}")
+    logger.info(f"현재 세션 상태 키들: {list(st.session_state.keys())}")
+else:
+    logger.info("상태 이미 로드됨, 스킵")
+
 # 로그인 기능
 def login():
     token = st.session_state['input_token'].strip()
@@ -85,6 +274,7 @@ def login():
             save_login_token(token)
             st.session_state['token'] = token
             st.session_state['logged_in'] = True
+            save_enhanced_app_state()  # 상태 저장
             st.success("로그인 성공!")
         except Exception as e:
             st.error(f"로그인에 실패했습니다: {e}")
@@ -95,6 +285,7 @@ def login():
 def logout():
     api.set_access_token(None)
     delete_login_token()
+    delete_app_state()  # 상태 파일 삭제
     st.session_state['token'] = None
     st.session_state['logged_in'] = False
     st.success("로그아웃되었습니다.")
@@ -117,12 +308,16 @@ def show_whoami():
 
 # 캐시 정보 스캔 및 화면에 표시하는 기능
 def scan_cache():
+    logger.info("=== 캐시 스캔 시작 ===")
+    
     cache_info = scan_cache_dir()
     st.session_state['cache_info'] = cache_info
+    logger.info(f"캐시 정보 저장됨: {len(cache_info.repos)}개 저장소")
 
     # 캐시 데이터 수집
     revisions = []
     for repo in cache_info.repos:
+        logger.info(f"저장소 발견: {repo.repo_id}")
         for revision in repo.revisions:
             rev_info = {
                 "Repo ID": repo.repo_id,
@@ -132,7 +327,13 @@ def scan_cache():
                 "Full Revision": revision.commit_hash,
             }
             revisions.append(rev_info)
+    
     st.session_state['revisions_df'] = pd.DataFrame(revisions)
+    logger.info(f"캐시 데이터프레임 생성: {len(revisions)}개 항목")
+    
+    # 캐시 스캔 상태 업데이트
+    st.session_state['cache_scanned'] = True
+    logger.info("캐시 스캔 상태 True로 설정")
 
 # 선택한 캐시 항목 삭제
 def delete_selected(selected_rows):
@@ -155,6 +356,13 @@ def delete_selected(selected_rows):
 def render_system_monitoring():
     st.subheader("🖥️ 시스템 리소스 모니터링")
     
+    # 상태 배너
+    if st.session_state.get('monitoring_active', False):
+        refresh_status = f"자동 갱신: {st.session_state.get('auto_refresh_interval', 0)}초" if st.session_state.get('auto_refresh_interval', 0) > 0 else "수동 갱신"
+        st.success(f"🟢 **모니터링 상태**: 활성화됨 ({refresh_status})")
+    else:
+        st.warning("🟡 **모니터링 상태**: 비활성화됨 - 아래 버튼으로 시작하세요")
+    
     # 자동 갱신 설정 초기화
     if 'auto_refresh_interval' not in st.session_state:
         st.session_state['auto_refresh_interval'] = 0
@@ -167,16 +375,27 @@ def render_system_monitoring():
     with col1:
         if st.button("🚀 모니터링 시작"):
             st.session_state['system_monitor'].start_monitoring()
+            st.session_state['monitoring_active'] = True
+            save_enhanced_app_state()  # 상태 저장
             st.success("모니터링이 시작되었습니다.")
     
     with col2:
         if st.button("⏹️ 모니터링 중지"):
             st.session_state['system_monitor'].stop_monitoring()
             st.session_state['auto_refresh_interval'] = 0
+            st.session_state['monitoring_active'] = False
+            save_enhanced_app_state()  # 상태 저장
             st.info("모니터링이 중지되었습니다.")
+    
+    # 모니터링 상태 표시
+    if st.session_state.get('monitoring_active', False):
+        st.success("🟢 모니터링 활성화됨")
+    else:
+        st.info("⚫ 모니터링 비활성화됨")
     
     with col3:
         if st.button("🔄 새로고침"):
+            save_enhanced_app_state()  # 상태 저장
             st.rerun()
     
     with col4:
@@ -187,12 +406,18 @@ def render_system_monitoring():
             "3초마다": 3,
             "10초마다": 10
         }
+        
+        # 현재 설정된 값을 기본값으로 사용
+        current_interval = st.session_state.get('auto_refresh_interval', 0)
+        current_key = next((k for k, v in refresh_options.items() if v == current_interval), "자동 갱신 끄기")
+        
         selected_refresh = st.selectbox(
             "자동 갱신",
             options=list(refresh_options.keys()),
-            index=0
+            index=list(refresh_options.keys()).index(current_key)
         )
         st.session_state['auto_refresh_interval'] = refresh_options[selected_refresh]
+        save_enhanced_app_state()  # 상태 저장
     
     # 자동 갱신 로직
     if st.session_state['auto_refresh_interval'] > 0:
@@ -376,49 +601,101 @@ def render_system_charts():
 
 # 모델 관리 UI
 def render_model_management():
-    st.subheader("🤖 모델 관리")
+    st.header("🤖 모델 관리")
     
-    # 모델 로드 섹션
-    st.subheader("📥 모델 로드")
+    # 상태 배너
+    status_items = []
+    if st.session_state.get('model_path_input', ''):
+        status_items.append(f"입력 경로: {st.session_state['model_path_input']}")
+    if st.session_state.get('current_model_analysis'):
+        status_items.append("분석 결과 존재")
+    if st.session_state.get('selected_cached_model', '직접 입력') != '직접 입력':
+        status_items.append(f"캐시 선택: {st.session_state['selected_cached_model']}")
     
-    # 캐시된 모델에서 선택 옵션 추가
-    if st.session_state['cache_info']:
-        st.subheader("🗂️ 캐시된 모델에서 선택")
-        cached_models = []
-        for repo in st.session_state['cache_info'].repos:
-            cached_models.append(repo.repo_id)
+    if status_items:
+        st.success(f"🟢 **저장된 상태**: {', '.join(status_items)}")
+    else:
+        st.info("🔵 **모델 관리**: 새로운 세션 - 아래에서 모델을 선택하거나 입력하세요")
+    
+    # 상단 구분선
+    st.markdown("---")
+    
+    # 모델 로드 섹션을 컨테이너로 깔끔하게 정리
+    with st.container():
+        st.subheader("📥 새 모델 로드")
         
-        if cached_models:
-            selected_cached_model = st.selectbox(
-                "캐시된 모델 선택 (선택사항)", 
-                options=["직접 입력"] + cached_models,
-                index=0
-            )
-            
-            if selected_cached_model != "직접 입력":
-                # 캐시된 모델 선택 시 자동으로 경로 설정
-                st.session_state['model_path_input'] = selected_cached_model
-                st.success(f"선택된 모델: {selected_cached_model}")
-    
-    model_path = st.text_input("모델 경로 (로컬 경로 또는 HuggingFace 모델 ID)", key="model_path_input", placeholder="예: tabularisai/multilingual-sentiment-analysis")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("🔍 모델 분석"):
+        # 캐시된 모델 선택을 별도 컨테이너로
+        if st.session_state['cache_info']:
+            with st.expander("🗂️ 캐시된 모델에서 선택", expanded=False):
+                cached_models = []
+                for repo in st.session_state['cache_info'].repos:
+                    cached_models.append(repo.repo_id)
+                
+                if cached_models:
+                    # 저장된 선택값 복원
+                    saved_selection = st.session_state.get('selected_cached_model', '직접 입력')
+                    try:
+                        default_index = (["직접 입력"] + cached_models).index(saved_selection)
+                    except ValueError:
+                        default_index = 0
+                    
+                    selected_cached_model = st.selectbox(
+                        "캐시된 모델 선택", 
+                        options=["직접 입력"] + cached_models,
+                        index=default_index,
+                        key="cached_model_select"
+                    )
+                    
+                    if selected_cached_model != "직접 입력":
+                        # 캐시된 모델 선택 시 자동으로 경로 설정
+                        st.session_state['model_path_input'] = selected_cached_model
+                        st.session_state['selected_cached_model'] = selected_cached_model
+                        save_enhanced_app_state()  # 상태 저장
+                        st.success(f"✅ 선택된 모델: `{selected_cached_model}`")
+                    else:
+                        st.session_state['selected_cached_model'] = '직접 입력'
+                        save_enhanced_app_state()
+        
+        # 모델 경로 입력 - 더 눈에 띄게
+        st.markdown("#### 🔗 모델 경로 입력")
+        model_path = st.text_input(
+            "모델 경로", 
+            key="model_path_input", 
+            placeholder="예: tabularisai/multilingual-sentiment-analysis",
+            help="로컬 경로 또는 HuggingFace 모델 ID를 입력하세요"
+        )
+        
+        # 버튼들을 더 직관적으로 배치
+        st.markdown("#### ⚡ 액션")
+        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+        
+        with col1:
+            analyze_clicked = st.button("🔍 모델 분석", use_container_width=True, type="secondary")
+        
+        with col2:
+            load_clicked = st.button("📤 모델 로드", use_container_width=True, type="primary")
+        
+        with col3:
+            refresh_clicked = st.button("🔄 상태 새로고침", use_container_width=True)
+        
+        with col4:
+            clear_clicked = st.button("🧹 입력 지우기", use_container_width=True)
+        
+        # 버튼 액션 처리
+        if analyze_clicked:
             if model_path:
-                with st.spinner("모델 분석 중..."):
+                with st.spinner("🔍 모델 분석 중..."):
                     analysis = st.session_state['model_manager'].analyze_model(model_path)
                     if 'error' in analysis:
-                        st.error(f"모델 분석 실패: {analysis['error']}")
+                        st.error(f"❌ 모델 분석 실패: {analysis['error']}")
                     else:
                         st.session_state['current_model_analysis'] = analysis
-                        st.success("모델 분석 완료!")
+                        save_enhanced_app_state()  # 상태 저장
+                        st.success("✅ 모델 분석 완료!")
             else:
-                st.error("모델 경로를 입력하세요.")
-    
-    with col2:
-        if st.button("📤 모델 로드"):
+                st.error("❌ 모델 경로를 입력하세요.")
+        
+        if load_clicked:
             if model_path:
                 # 모델 이름 자동 생성
                 model_name = ""
@@ -435,7 +712,7 @@ def render_model_management():
                 st.session_state['model_manager'].load_model_async(
                     model_name, model_path, load_callback
                 )
-                st.info(f"모델 로드 시작... (이름: 자동 생성)")
+                st.info(f"🚀 모델 로드 시작... (이름: 자동 생성)")
                 
                 # 자동 새로고침 체크 시작
                 st.session_state['check_loading'] = True
@@ -444,12 +721,23 @@ def render_model_management():
                 if st.session_state['model_manager']._is_huggingface_model_id(model_path):
                     st.info("🔄 HuggingFace 모델 감지 - 캐시 자동 갱신 중...")
                     scan_cache()
+                
+                save_enhanced_app_state()  # 상태 저장
             else:
-                st.error("모델 경로를 입력하세요.")
-    
-    with col3:
-        if st.button("🔄 상태 새로고침"):
+                st.error("❌ 모델 경로를 입력하세요.")
+        
+        if refresh_clicked:
+            save_enhanced_app_state()  # 상태 저장
             st.rerun()
+        
+        if clear_clicked:
+            st.session_state['model_path_input'] = ""
+            st.session_state['current_model_analysis'] = None
+            save_enhanced_app_state()  # 상태 저장
+            st.rerun()
+    
+    # 구분선
+    st.markdown("---")
     
     # 로드 완료 메시지 표시 및 자동 새로고침
     if st.session_state.get('load_complete', False):
@@ -793,6 +1081,12 @@ def render_model_management():
 def render_fastapi_server():
     st.subheader("🚀 FastAPI 서버")
     
+    # 상태 배너
+    if st.session_state.get('fastapi_server_running', False):
+        st.success("🟢 **서버 상태**: 실행 중")
+    else:
+        st.warning("🟡 **서버 상태**: 중지됨 - 아래 버튼으로 시작하세요")
+    
     # 서버 정보
     server_info = st.session_state['fastapi_server'].get_server_info()
     
@@ -811,6 +1105,8 @@ def render_fastapi_server():
         if st.button("🚀 서버 시작"):
             try:
                 result = st.session_state['fastapi_server'].start_server()
+                st.session_state['fastapi_server_running'] = True
+                save_enhanced_app_state()  # 상태 저장
                 st.success(result)
             except Exception as e:
                 st.error(f"서버 시작 실패: {e}")
@@ -819,6 +1115,8 @@ def render_fastapi_server():
         if st.button("⏹️ 서버 중지"):
             try:
                 result = st.session_state['fastapi_server'].stop_server()
+                st.session_state['fastapi_server_running'] = False
+                save_enhanced_app_state()  # 상태 저장
                 st.info(result)
             except Exception as e:
                 st.error(f"서버 중지 실패: {e}")
@@ -826,6 +1124,7 @@ def render_fastapi_server():
     with col3:
         if st.button("🧹 캐시 정리"):
             st.session_state['fastapi_server'].clear_pipeline_cache()
+            save_enhanced_app_state()  # 상태 저장
             st.success("파이프라인 캐시가 정리되었습니다.")
     
     # 서버 정보 표시
@@ -877,6 +1176,27 @@ def render_fastapi_server():
 # 메인 함수
 def main():
     st.title("🚀 Hugging Face GUI")
+    
+    # 복원 상태 알림 표시
+    if st.session_state['logged_in']:
+        restoration_success = st.session_state.get('restoration_success', [])
+        restoration_failed = st.session_state.get('restoration_failed', [])
+        
+        if restoration_success:
+            st.success(f"🔄 **자동 복원됨**: {', '.join(restoration_success)}")
+        
+        if restoration_failed:
+            st.error(f"❌ **복원 실패**: {', '.join(restoration_failed)}")
+            st.info("💡 실패한 서비스는 해당 탭에서 수동으로 다시 시작할 수 있습니다.")
+        
+        # 상태 초기화 버튼
+        if st.button("🔄 모든 상태 초기화"):
+            delete_app_state()
+            # clear_browser_storage()  # 현재 비활성화
+            st.session_state.clear()
+            st.success("모든 상태가 초기화되었습니다.")
+            st.rerun()
+    
     st.markdown("---")
     
     # 사이드바
@@ -891,13 +1211,21 @@ def main():
         st.metric("메모리 사용량", f"{system_summary['total_memory_usage_mb']:.1f} MB")
         
         # 모니터링 상태
-        if st.session_state['system_monitor'].monitoring:
+        if st.session_state.get('monitoring_active', False):
             st.success("🟢 모니터링 실행 중")
         else:
             st.info("⏸️ 모니터링 중지됨")
         
+        # 캐시 상태
+        cache_scanned = st.session_state.get('cache_scanned', False)
+        cache_info_exists = st.session_state.get('cache_info') is not None
+        if cache_scanned and cache_info_exists:
+            st.success(f"🟢 캐시 스캔됨 ({len(st.session_state['revisions_df'])}개)")
+        else:
+            st.info(f"⚫ 캐시 미스캔 (scanned={cache_scanned}, info={cache_info_exists})")
+        
         # 서버 상태
-        if st.session_state['fastapi_server'].is_running():
+        if st.session_state.get('fastapi_server_running', False):
             st.success("🟢 API 서버 실행 중")
         else:
             st.info("⏸️ API 서버 중지됨")
@@ -908,7 +1236,8 @@ def main():
         "📁 캐시 관리",
         "🖥️ 시스템 모니터링",
         "🤖 모델 관리",
-        "🚀 FastAPI 서버"
+        "🚀 FastAPI 서버",
+        "🐛 디버그"
     ])
     
     # 첫 번째 탭: 로그인/로그아웃 및 사용자 정보
@@ -932,8 +1261,48 @@ def main():
     # 두 번째 탭: 캐시 관리
     with tabs[1]:
         st.subheader("📁 캐시 관리")
-        if st.button("🔍 캐시 스캔"):
-            scan_cache()
+        
+        # 상태 배너 (디버깅 정보 포함)
+        cache_scanned = st.session_state.get('cache_scanned', False)
+        cache_info_exists = st.session_state.get('cache_info') is not None
+        revisions_count = len(st.session_state.get('revisions_df', pd.DataFrame()))
+        
+        logger.info(f"캐시 UI 렌더링 - cache_scanned: {cache_scanned}, cache_info_exists: {cache_info_exists}, revisions_count: {revisions_count}")
+        
+        # 캐시 데이터가 모두 있는 경우
+        if cache_scanned and cache_info_exists and revisions_count > 0:
+            st.success(f"🟢 **캐시 상태**: {revisions_count}개 항목 스캔됨")
+        # 캐시 스캔 상태만 있고 실제 데이터가 없는 경우
+        elif cache_scanned and (not cache_info_exists or revisions_count == 0):
+            st.info(f"🔄 **캐시 상태**: 복원 중... (scanned={cache_scanned}, info={cache_info_exists}, count={revisions_count})")
+            # 자동 복원 시도
+            try:
+                scan_cache()
+                st.rerun()
+            except Exception as e:
+                st.error(f"자동 복원 실패: {e}")
+        # 완전히 스캔되지 않은 경우
+        else:
+            st.warning(f"🟡 **캐시 상태**: 스캔되지 않음 - 아래 버튼으로 스캔하세요")
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            if st.button("🔍 캐시 스캔"):
+                logger.info("캐시 스캔 버튼 클릭됨")
+                scan_cache()
+                st.session_state['cache_scanned'] = True
+                logger.info("캐시 스캔 완료, 상태 저장 시작")
+                save_enhanced_app_state()  # 상태 저장
+                logger.info("상태 저장 완료, 페이지 재실행")
+                st.rerun()
+        
+        with col2:
+            if st.session_state.get('cache_scanned', False) and st.session_state['cache_info']:
+                if st.button("🔄 캐시 재스캔"):
+                    scan_cache()
+                    save_enhanced_app_state()
+                    st.rerun()
         
         if st.session_state['cache_info']:
             # AgGrid 설정
@@ -971,6 +1340,7 @@ def main():
                     st.warning(f"{selected_count}개의 수정 버전을 삭제하시겠습니까?")
                     if st.button("삭제 확인"):
                         delete_selected(selected_df)
+                        save_enhanced_app_state()  # 상태 저장
                         st.rerun()
             else:
                 st.write("선택된 항목: 0개, 총 용량: 0.00 MB")
@@ -986,12 +1356,212 @@ def main():
     # 다섯 번째 탭: FastAPI 서버
     with tabs[4]:
         render_fastapi_server()
+    
+    # 여섯 번째 탭: 디버그 정보
+    with tabs[5]:
+        st.subheader("🐛 디버그 정보")
+        
+        # 현재 세션 상태
+        st.subheader("📊 현재 세션 상태")
+        debug_state = {
+            'cache_scanned': st.session_state.get('cache_scanned', 'NOT_SET'),
+            'cache_info': st.session_state.get('cache_info') is not None,
+            'revisions_df': len(st.session_state.get('revisions_df', pd.DataFrame())),
+            'monitoring_active': st.session_state.get('monitoring_active', 'NOT_SET'),
+            'fastapi_server_running': st.session_state.get('fastapi_server_running', 'NOT_SET'),
+            'model_path_input': st.session_state.get('model_path_input', 'NOT_SET'),
+            'state_loaded': st.session_state.get('state_loaded', 'NOT_SET')
+        }
+        st.json(debug_state)
+        
+        # 상태 파일 정보
+        st.subheader("📁 상태 파일 정보")
+        if os.path.exists(STATE_FILE):
+            st.success(f"✅ 상태 파일 존재: {STATE_FILE}")
+            try:
+                with open(STATE_FILE, 'r', encoding='utf-8') as f:
+                    file_content = json.load(f)
+                st.json(file_content)
+            except Exception as e:
+                st.error(f"파일 읽기 오류: {e}")
+        else:
+            st.error(f"❌ 상태 파일 없음: {STATE_FILE}")
+        
+        # 수동 액션
+        st.subheader("🔧 수동 액션")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            if st.button("🔄 상태 강제 로드"):
+                logger.info("수동 상태 로드 요청")
+                load_enhanced_app_state()
+                st.rerun()
+        
+        with col2:
+            if st.button("💾 상태 강제 저장"):
+                logger.info("수동 상태 저장 요청")
+                save_enhanced_app_state()
+                st.success("상태 저장 완료")
+        
+        with col3:
+            if st.button("📝 최근 로그 보기"):
+                if os.path.exists('app_debug.log'):
+                    with open('app_debug.log', 'r', encoding='utf-8') as f:
+                        lines = f.readlines()
+                        # 마지막 50줄만 표시
+                        recent_logs = ''.join(lines[-50:]) if lines else "로그가 비어있습니다."
+                    st.text_area("최근 로그 (최대 50줄)", recent_logs, height=300)
+                else:
+                    st.error("로그 파일이 없습니다.")
+        
+        # 실시간 상태 추적
+        st.subheader("🔍 실시간 상태 추적")
+        
+        if st.button("🔄 실시간 상태 체크"):
+            # 현재 상태 확인
+            current_status = []
+            
+            # 1. 파일 시스템 체크
+            if os.path.exists(STATE_FILE):
+                try:
+                    with open(STATE_FILE, 'r') as f:
+                        file_state = json.load(f)
+                    current_status.append(f"✅ 상태 파일: cache_scanned={file_state.get('cache_scanned')}")
+                except Exception as e:
+                    current_status.append(f"❌ 상태 파일 읽기 오류: {e}")
+            else:
+                current_status.append("❌ 상태 파일 없음")
+            
+            # 2. 세션 상태 체크
+            cache_scanned = st.session_state.get('cache_scanned', 'NOT_SET')
+            cache_info = st.session_state.get('cache_info')
+            current_status.append(f"📊 세션 상태: cache_scanned={cache_scanned}")
+            current_status.append(f"📊 세션 상태: cache_info={'존재' if cache_info else '없음'}")
+            
+            # 3. 디렉토리 상태 체크
+            from huggingface_hub import scan_cache_dir
+            try:
+                cache_dir_info = scan_cache_dir()
+                current_status.append(f"📁 캐시 디렉토리: {len(cache_dir_info.repos)}개 저장소")
+            except Exception as e:
+                current_status.append(f"❌ 캐시 디렉토리 오류: {e}")
+            
+            # 결과 표시
+            for status in current_status:
+                if "✅" in status:
+                    st.success(status)
+                elif "❌" in status:
+                    st.error(status)
+                else:
+                    st.info(status)
 
-# 프로그램 시작 시 로그인 상태 확인 및 캐시 스캔
+# 상태 복원 알림 관리
+def show_restoration_status():
+    """복원된 상태에 대한 알림 표시"""
+    restored_items = []
+    
+    # 복원된 상태 확인
+    if st.session_state.get('cache_scanned', False) and st.session_state['cache_info']:
+        restored_items.append(f"캐시 스캔 ({len(st.session_state['revisions_df'])}개 항목)")
+    
+    if st.session_state.get('monitoring_active', False):
+        restored_items.append("시스템 모니터링")
+    
+    if st.session_state.get('fastapi_server_running', False):
+        restored_items.append("FastAPI 서버")
+    
+    if st.session_state.get('model_path_input', ''):
+        restored_items.append(f"모델 경로: {st.session_state['model_path_input']}")
+    
+    if st.session_state.get('current_model_analysis'):
+        restored_items.append("모델 분석 결과")
+    
+    if restored_items:
+        st.success(f"🔄 **상태 복원됨**: {', '.join(restored_items)}")
+        return True
+    return False
+
+# 프로그램 시작 시 로그인 상태 확인 및 상태 복원
 if st.session_state['logged_in']:
     api.set_access_token(st.session_state['token'])
-    if st.session_state['cache_info'] is None:
-        scan_cache()
+    
+    # 복원 상태 추적
+    restoration_success = []
+    restoration_failed = []
+    
+    # 캐시 상태 복원
+    cache_scanned_state = st.session_state.get('cache_scanned', False)
+    cache_info_exists = st.session_state.get('cache_info') is not None
+    revisions_count = len(st.session_state.get('revisions_df', pd.DataFrame()))
+    
+    logger.info(f"캐시 복원 체크: cache_scanned={cache_scanned_state}, cache_info_exists={cache_info_exists}, revisions_count={revisions_count}")
+    
+    # cache_scanned=True인데 실제 캐시 데이터가 없는 경우 자동 복원
+    if cache_scanned_state and (not cache_info_exists or revisions_count == 0):
+        logger.info("캐시 스캔됨 상태이지만 cache_info 또는 revisions_df 없음 - 자동 재스캔")
+        try:
+            scan_cache()
+            restoration_success.append("캐시 자동 복원")
+            logger.info("캐시 자동 복원 성공")
+        except Exception as e:
+            restoration_failed.append(f"캐시 복원 ({str(e)})")
+            st.session_state['cache_scanned'] = False
+            save_enhanced_app_state()
+            logger.error(f"캐시 자동 복원 실패: {e}")
+    elif not cache_scanned_state and not cache_info_exists:
+        logger.info("첫 로그인 - 자동 캐시 스캔")
+        # 첫 로그인 시 자동 캐시 스캔
+        try:
+            scan_cache()
+            st.session_state['cache_scanned'] = True
+            save_enhanced_app_state()
+            logger.info("첫 로그인 캐시 스캔 완료")
+        except Exception as e:
+            st.session_state['cache_scanned'] = False
+            save_enhanced_app_state()
+            logger.error(f"첫 로그인 캐시 스캔 실패: {e}")
+    else:
+        logger.info(f"캐시 복원 불필요: cache_scanned={cache_scanned_state}, cache_info_exists={cache_info_exists}, revisions_count={revisions_count}")
+    
+    # 모니터링 상태 복원
+    monitoring_active = st.session_state.get('monitoring_active', False)
+    logger.info(f"모니터링 복원 체크: monitoring_active={monitoring_active}")
+    
+    if monitoring_active:
+        try:
+            if not st.session_state['system_monitor'].monitoring:
+                st.session_state['system_monitor'].start_monitoring()
+                restoration_success.append("시스템 모니터링")
+                logger.info("시스템 모니터링 자동 복원 성공")
+            else:
+                logger.info("시스템 모니터링 이미 실행 중")
+        except Exception as e:
+            st.session_state['monitoring_active'] = False
+            restoration_failed.append(f"시스템 모니터링 ({str(e)})")
+            save_enhanced_app_state()
+            logger.error(f"시스템 모니터링 자동 복원 실패: {e}")
+    
+    # FastAPI 서버 상태 복원
+    server_running = st.session_state.get('fastapi_server_running', False)
+    logger.info(f"서버 복원 체크: fastapi_server_running={server_running}")
+    
+    if server_running:
+        try:
+            if not st.session_state['fastapi_server'].is_running():
+                st.session_state['fastapi_server'].start_server()
+                restoration_success.append("FastAPI 서버")
+                logger.info("FastAPI 서버 자동 복원 성공")
+            else:
+                logger.info("FastAPI 서버 이미 실행 중")
+        except Exception as e:
+            st.session_state['fastapi_server_running'] = False
+            restoration_failed.append(f"FastAPI 서버 ({str(e)})")
+            save_enhanced_app_state()
+            logger.error(f"FastAPI 서버 자동 복원 실패: {e}")
+    
+    # 복원 결과 저장 (메인 함수에서 표시용)
+    st.session_state['restoration_success'] = restoration_success
+    st.session_state['restoration_failed'] = restoration_failed
 
 if __name__ == "__main__":
     main()
