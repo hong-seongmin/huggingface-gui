@@ -686,7 +686,7 @@ def render_realtime_system_charts():
     
     # JavaScript 실시간 차트 생성
     realtime_chart_html = f"""
-    <div id="{chart_container_id}" style="width:100%; height:600px;"></div>
+    <div id="{chart_container_id}" style="width:100%; height:600px; min-width:800px;"></div>
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <script>
     // 실시간 데이터 저장소
@@ -701,7 +701,9 @@ def render_realtime_system_charts():
     let layout = {{
         title: '🔄 실시간 시스템 모니터링',
         grid: {{rows: 2, columns: 2, pattern: 'independent'}},
+        width: null,  // 컨테이너 너비에 맞춤
         height: 600,
+        autosize: true,
         showlegend: true,
         annotations: [
             {{text: 'CPU 사용률', x: 0.2, y: 0.9, xref: 'paper', yref: 'paper', showarrow: false}},
@@ -719,8 +721,43 @@ def render_realtime_system_charts():
         {{x: [], y: [], name: 'Disk %', line: {{color: 'purple'}}, xaxis: 'x4', yaxis: 'y4'}}
     ];
     
-    // 차트 생성
-    Plotly.newPlot('{chart_container_id}', traces, layout);
+    // 차트 생성 및 초기 크기 설정
+    Plotly.newPlot('{chart_container_id}', traces, layout, {{responsive: true}});
+    
+    // 초기 리사이즈 (탭 전환 시 크기 문제 해결)
+    setTimeout(function() {{
+        Plotly.Plots.resize('{chart_container_id}');
+    }}, 100);
+    
+    // 추가 리사이즈 시도 (더 안전하게)
+    setTimeout(function() {{
+        Plotly.Plots.resize('{chart_container_id}');
+    }}, 500);
+    
+    // 창 크기 변경 시 자동 리사이즈
+    window.addEventListener('resize', function() {{
+        Plotly.Plots.resize('{chart_container_id}');
+    }});
+    
+    // MutationObserver로 DOM 변경 감지 (탭 전환 등)
+    const observer = new MutationObserver(function(mutations) {{
+        mutations.forEach(function(mutation) {{
+            if (mutation.type === 'attributes' && mutation.attributeName === 'style') {{
+                setTimeout(function() {{
+                    Plotly.Plots.resize('{chart_container_id}');
+                }}, 100);
+            }}
+        }});
+    }});
+    
+    // 차트 컨테이너의 부모 요소 관찰
+    const chartContainer = document.getElementById('{chart_container_id}');
+    if (chartContainer && chartContainer.parentElement) {{
+        observer.observe(chartContainer.parentElement, {{
+            attributes: true,
+            attributeFilter: ['style', 'class']
+        }});
+    }}
     
     // 실시간 데이터 업데이트 함수
     function updateChartData() {{
