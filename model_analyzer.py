@@ -291,10 +291,23 @@ class ComprehensiveModelAnalyzer:
             if task == 'text-classification':
                 examples[task] = {
                     'description': '텍스트 분류 (감정 분석, 스팸 감지 등)',
-                    'example_code': f'''from transformers import pipeline
+                    'example_code': f'''# 1. 직접 사용
+from transformers import pipeline
 classifier = pipeline("text-classification", model="model_name")
 result = classifier("I love this product!", max_length={max_length}, truncation=True)
-print(result)''',
+print(result)
+
+# 2. 서버 API 사용 (로컬)
+import requests
+response = requests.post("http://127.0.0.1:8000/classify", 
+                        json={{"text": "I love this product!"}})
+print(response.json())
+
+# 3. 서버 API 사용 (내부 IP)
+import requests
+response = requests.post("http://172.28.177.205:8000/classify", 
+                        json={{"text": "I love this product!"}})
+print(response.json())''',
                     'example_input': '"I love this product!"',
                     'expected_output': '[{"label": "POSITIVE", "score": 0.9998}]',
                     'parameters': {
@@ -307,10 +320,23 @@ print(result)''',
             elif task == 'token-classification':
                 examples[task] = {
                     'description': '토큰 분류 (NER, POS 태깅 등)',
-                    'example_code': f'''from transformers import pipeline
+                    'example_code': f'''# 1. 직접 사용
+from transformers import pipeline
 ner = pipeline("ner", model="model_name", aggregation_strategy="simple")
 result = ner("My name is John and I live in Seoul.", max_length={max_length}, truncation=True)
-print(result)''',
+print(result)
+
+# 2. 서버 API 사용 (로컬)
+import requests
+response = requests.post("http://127.0.0.1:8000/ner", 
+                        json={{"text": "My name is John and I live in Seoul."}})
+print(response.json())
+
+# 3. 서버 API 사용 (내부 IP)
+import requests
+response = requests.post("http://172.28.177.205:8000/ner", 
+                        json={{"text": "My name is John and I live in Seoul."}})
+print(response.json())''',
                     'example_input': '"My name is John and I live in Seoul."',
                     'expected_output': '[{"entity_group": "PER", "score": 0.99, "word": "John", "start": 11, "end": 15}]',
                     'parameters': {
@@ -323,40 +349,92 @@ print(result)''',
             elif task == 'question-answering':
                 examples[task] = {
                     'description': '질문 답변 (문맥 기반 답변 생성)',
-                    'example_code': '''from transformers import pipeline
+                    'example_code': '''# 1. 직접 사용
+from transformers import pipeline
 qa = pipeline("question-answering", model="model_name")
 result = qa(question="What is AI?", context="AI is artificial intelligence...")
-print(result)''',
+print(result)
+
+# 2. 서버 API 사용 (로컬)
+import requests
+response = requests.post("http://127.0.0.1:8000/qa", 
+                        json={"question": "What is AI?", "context": "AI is artificial intelligence..."})
+print(response.json())
+
+# 3. 서버 API 사용 (내부 IP)
+import requests
+response = requests.post("http://172.28.177.205:8000/qa", 
+                        json={"question": "What is AI?", "context": "AI is artificial intelligence..."})
+print(response.json())''',
                     'example_input': 'question="What is AI?", context="AI is artificial intelligence..."',
                     'expected_output': '{"answer": "artificial intelligence", "score": 0.95, "start": 6, "end": 28}'
                 }
             elif task == 'text-generation':
                 examples[task] = {
                     'description': '텍스트 생성 (문장 완성, 창작 등)',
-                    'example_code': '''from transformers import pipeline
+                    'example_code': '''# 1. 직접 사용
+from transformers import pipeline
 generator = pipeline("text-generation", model="model_name")
 result = generator("The future of AI is", max_length=50)
-print(result)''',
+print(result)
+
+# 2. 서버 API 사용 (로컬)
+import requests
+response = requests.post("http://127.0.0.1:8000/generate", 
+                        json={"text": "The future of AI is", "max_length": 50})
+print(response.json())
+
+# 3. 서버 API 사용 (내부 IP)
+import requests
+response = requests.post("http://172.28.177.205:8000/generate", 
+                        json={"text": "The future of AI is", "max_length": 50})
+print(response.json())''',
                     'example_input': '"The future of AI is"',
                     'expected_output': '[{"generated_text": "The future of AI is bright and full of possibilities..."}]'
                 }
             elif task == 'fill-mask':
                 examples[task] = {
                     'description': '빈칸 채우기 (마스크된 토큰 예측)',
-                    'example_code': '''from transformers import pipeline
+                    'example_code': '''# 1. 직접 사용
+from transformers import pipeline
 fill_mask = pipeline("fill-mask", model="model_name")
 result = fill_mask("The weather is [MASK] today.")
-print(result)''',
+print(result)
+
+# 2. 서버 API 사용 (로컬)
+import requests
+response = requests.post("http://127.0.0.1:8000/fill-mask", 
+                        json={"text": "The weather is [MASK] today."})
+print(response.json())
+
+# 3. 서버 API 사용 (내부 IP)
+import requests
+response = requests.post("http://172.28.177.205:8000/fill-mask", 
+                        json={"text": "The weather is [MASK] today."})
+print(response.json())''',
                     'example_input': '"The weather is [MASK] today."',
                     'expected_output': '[{"sequence": "The weather is nice today.", "score": 0.8, "token": 1234}]'
                 }
             elif task == 'text2text-generation':
                 examples[task] = {
                     'description': '텍스트 간 변환 (번역, 요약 등)',
-                    'example_code': '''from transformers import pipeline
+                    'example_code': '''# 1. 직접 사용
+from transformers import pipeline
 generator = pipeline("text2text-generation", model="model_name")
 result = generator("translate English to Korean: Hello world")
-print(result)''',
+print(result)
+
+# 2. 서버 API 사용 (로컬)
+import requests
+response = requests.post("http://127.0.0.1:8000/text2text", 
+                        json={"text": "translate English to Korean: Hello world"})
+print(response.json())
+
+# 3. 서버 API 사용 (내부 IP)
+import requests
+response = requests.post("http://172.28.177.205:8000/text2text", 
+                        json={"text": "translate English to Korean: Hello world"})
+print(response.json())''',
                     'example_input': '"translate English to Korean: Hello world"',
                     'expected_output': '[{"generated_text": "안녕하세요 세계"}]'
                 }
