@@ -334,6 +334,103 @@ def scan_cache():
     st.session_state['cache_scanned'] = True
     logger.info("캐시 스캔 상태 True로 설정")
 
+# 모델 다운로드 함수
+def download_model_to_cache(model_input, auto_scan=False):
+    """
+    HuggingFace 모델을 로컬 캐시로 다운로드
+    
+    Args:
+        model_input (str): 모델 ID 또는 HuggingFace URL
+        auto_scan (bool): 다운로드 후 자동으로 캐시 스캔 여부
+    """
+    try:
+        # URL에서 모델 ID 추출
+        model_id = model_input.strip()
+        if "huggingface.co/" in model_id:
+            # URL에서 모델 ID 추출
+            # 예: https://huggingface.co/microsoft/DialoGPT-medium -> microsoft/DialoGPT-medium
+            parts = model_id.split("huggingface.co/")
+            if len(parts) > 1:
+                model_id = parts[1].rstrip('/')
+                # 추가 경로 파라미터 제거 (예: /tree/main 등)
+                model_id = model_id.split('/tree/')[0].split('/blob/')[0]
+        
+        logger.info(f"모델 다운로드 시작: {model_id}")
+        
+        # 다운로드 진행 상황 표시
+        progress_placeholder = st.empty()
+        progress_placeholder.info(f"🔄 모델 다운로드 중: {model_id}")
+        
+        # transformers를 사용한 모델 다운로드
+        from transformers import AutoTokenizer, AutoModel, AutoConfig
+        
+        try:
+            # 설정 파일 다운로드
+            progress_placeholder.info(f"📋 설정 파일 다운로드 중...")
+            config = AutoConfig.from_pretrained(model_id)
+            
+            # 토크나이저 다운로드
+            progress_placeholder.info(f"🔤 토크나이저 다운로드 중...")
+            try:
+                tokenizer = AutoTokenizer.from_pretrained(model_id)
+            except Exception as e:
+                logger.warning(f"토크나이저 다운로드 실패 (일부 모델은 토크나이저가 없을 수 있음): {e}")
+            
+            # 모델 다운로드
+            progress_placeholder.info(f"🤖 모델 파일 다운로드 중...")
+            model = AutoModel.from_pretrained(model_id)
+            
+            progress_placeholder.success(f"✅ 모델 다운로드 완료: {model_id}")
+            logger.info(f"모델 다운로드 완료: {model_id}")
+            
+            # 자동 스캔 옵션
+            if auto_scan:
+                progress_placeholder.info(f"🔍 캐시 스캔 중...")
+                scan_cache()
+                save_app_state()
+                progress_placeholder.success(f"✅ 모델 다운로드 및 캐시 스캔 완료!")
+                st.rerun()
+            else:
+                save_app_state()
+                
+        except Exception as model_error:
+            # AutoModel 실패 시 다른 방법 시도
+            logger.warning(f"AutoModel 다운로드 실패, 다른 방법 시도: {model_error}")
+            
+            try:
+                # snapshot_download 사용
+                from huggingface_hub import snapshot_download
+                progress_placeholder.info(f"🔄 대체 방법으로 다운로드 중...")
+                
+                snapshot_download(
+                    repo_id=model_id,
+                    cache_dir=None,  # 기본 캐시 디렉토리 사용
+                    resume_download=True
+                )
+                
+                progress_placeholder.success(f"✅ 모델 다운로드 완료: {model_id}")
+                logger.info(f"모델 다운로드 완료 (snapshot_download): {model_id}")
+                
+                if auto_scan:
+                    progress_placeholder.info(f"🔍 캐시 스캔 중...")
+                    scan_cache()
+                    save_app_state()
+                    progress_placeholder.success(f"✅ 모델 다운로드 및 캐시 스캔 완료!")
+                    st.rerun()
+                else:
+                    save_app_state()
+                    
+            except Exception as snapshot_error:
+                error_msg = f"모델 다운로드 실패: {snapshot_error}"
+                progress_placeholder.error(f"❌ {error_msg}")
+                logger.error(error_msg)
+                st.error(error_msg)
+                
+    except Exception as e:
+        error_msg = f"모델 다운로드 중 오류 발생: {e}"
+        logger.error(error_msg)
+        st.error(error_msg)
+
 # 선택한 캐시 항목 삭제
 def delete_selected(selected_rows):
     if selected_rows.empty:
@@ -1645,11 +1742,16 @@ def main():
         else:
             st.warning(f"🟡 **캐시 상태**: 스캔되지 않음 - 아래 버튼으로 스캔하세요")
         
-        col1, col2 = st.columns([1, 2])
+        col1, col2 = st.columns([1, 1])
         
         with col1:
-            if st.button("🔍 캐시 스캔"):
-                logger.info("캐시 스캔 버튼 클릭됨")
+            # 캐시 스캔 버튼 - 이미 스캔된 경우에도 "캐시 스캔"으로 표시하되 재스캔 기능 수행
+            button_text = "🔍 캐시 스캔" if not st.session_state.get('cache_scanned', False) else "🔄 캐시 스캔"
+            if st.button(button_text):
+                if st.session_state.get('cache_scanned', False):
+                    logger.info("캐시 재스캔 버튼 클릭됨")
+                else:
+                    logger.info("캐시 스캔 버튼 클릭됨")
                 scan_cache()
                 st.session_state['cache_scanned'] = True
                 logger.info("캐시 스캔 완료, 상태 저장 시작")
@@ -1658,11 +1760,17 @@ def main():
                 st.rerun()
         
         with col2:
-            if st.session_state.get('cache_scanned', False) and st.session_state['cache_info']:
-                if st.button("🔄 캐시 재스캔"):
-                    scan_cache()
-                    save_app_state()
-                    st.rerun()
+            # 모델 다운로드 기능
+            st.markdown("#### 📥 모델 다운로드")
+            download_input = st.text_input(
+                "모델 ID 또는 HuggingFace 링크 입력:",
+                placeholder="예: microsoft/DialoGPT-medium 또는 https://huggingface.co/microsoft/DialoGPT-medium",
+                help="HuggingFace 모델 ID나 URL을 입력하면 로컬 캐시로 다운로드됩니다."
+            )
+            
+            if st.button("📥 다운로드 + 스캔", disabled=not download_input.strip()):
+                if download_input.strip():
+                    download_model_to_cache(download_input.strip(), auto_scan=True)
         
         if st.session_state['cache_info']:
             # AgGrid 설정
