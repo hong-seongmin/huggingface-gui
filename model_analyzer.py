@@ -210,7 +210,9 @@ class ComprehensiveModelAnalyzer:
             'max_sequence_length': 0,
             'vocabulary_size': 0,
             'usage_examples': {},
-            'detailed_config': {}
+            'detailed_config': {},
+            'embedding_info': {},  # 임베딩 모델 전용 정보
+            'model_capabilities': []  # 모델 능력 리스트
         }
         
         # config.json에서 정보 추출
@@ -261,6 +263,13 @@ class ComprehensiveModelAnalyzer:
             summary['detailed_config']['generation_temperature'] = gen_data.get('temperature', 'N/A')
             summary['detailed_config']['generation_top_p'] = gen_data.get('top_p', 'N/A')
             summary['detailed_config']['generation_top_k'] = gen_data.get('top_k', 'N/A')
+        
+        # 임베딩 모델 정보 추출
+        if 'feature-extraction' in summary['supported_tasks']:
+            summary['embedding_info'] = self._extract_embedding_info(summary, analysis_results)
+        
+        # 모델 능력 분석
+        summary['model_capabilities'] = self._analyze_model_capabilities(summary, analysis_results)
         
         # 사용 예시 생성 (분석 결과 포함)
         summary['usage_examples'] = self._generate_usage_examples(summary['supported_tasks'], summary['model_type'], analysis_results)
@@ -438,6 +447,84 @@ print(response.json())''',
                     'example_input': '"translate English to Korean: Hello world"',
                     'expected_output': '[{"generated_text": "안녕하세요 세계"}]'
                 }
+            elif task == 'feature-extraction':
+                examples[task] = {
+                    'description': '텍스트 임베딩 생성 (의미적 유사도, 검색, 클러스터링)',
+                    'example_code': f'''# 1. 직접 사용 (임베딩 생성)
+from transformers import AutoModel, AutoTokenizer
+import torch
+import torch.nn.functional as F
+
+tokenizer = AutoTokenizer.from_pretrained("model_name")
+model = AutoModel.from_pretrained("model_name")
+
+def get_embeddings(texts):
+    inputs = tokenizer(texts, padding=True, truncation=True, 
+                      max_length={max_length}, return_tensors="pt")
+    with torch.no_grad():
+        outputs = model(**inputs)
+        # CLS 토큰 또는 평균 풀링 사용
+        embeddings = outputs.last_hidden_state[:, 0, :]  # CLS 토큰
+        # 또는 평균 풀링: embeddings = outputs.last_hidden_state.mean(dim=1)
+    return embeddings
+
+# 사용 예시
+texts = ["안녕하세요", "Hello world", "こんにちは"]
+embeddings = get_embeddings(texts)
+print(f"임베딩 크기: {{embeddings.shape}}")
+
+# 2. 유사도 계산
+def calculate_similarity(text1, text2):
+    emb1 = get_embeddings([text1])
+    emb2 = get_embeddings([text2])
+    similarity = F.cosine_similarity(emb1, emb2)
+    return similarity.item()
+
+similarity = calculate_similarity("안녕하세요", "Hello")
+print(f"유사도: {{similarity:.4f}}")
+
+# 3. 서버 API 사용 (로컬)
+import requests
+response = requests.post("http://127.0.0.1:8000/models/model_name/predict", 
+                        json={{"text": "Hello world"}})
+print(response.json())
+
+# 4. 의미적 검색 시스템 구축
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+
+documents = [
+    "인공지능은 미래 기술입니다",
+    "머신러닝은 데이터 과학의 핵심입니다", 
+    "자연어 처리는 AI의 중요한 분야입니다"
+]
+
+# 문서 임베딩 생성
+doc_embeddings = get_embeddings(documents)
+
+# 검색 쿼리
+query = "AI 기술에 대해 알고 싶습니다"
+query_embedding = get_embeddings([query])
+
+# 유사도 계산 및 랭킹
+similarities = cosine_similarity(query_embedding, doc_embeddings)[0]
+ranked_docs = sorted(enumerate(similarities), key=lambda x: x[1], reverse=True)
+
+print("검색 결과:")
+for idx, score in ranked_docs:
+    print(f"문서 {{idx+1}}: {{documents[idx]}} (유사도: {{score:.4f}})")''',
+                    'example_input': '"Hello world"',
+                    'expected_output': 'Array shape: (1, 1024) - 1024차원 임베딩 벡터',
+                    'parameters': {
+                        'max_length': max_length,
+                        'padding': True,
+                        'truncation': True,
+                        'return_tensors': 'pt',
+                        'pooling_method': 'cls_token or mean_pooling',
+                        'similarity_function': 'cosine_similarity',
+                        'special_tokens': special_tokens
+                    }
+                }
         
         return examples
     
@@ -466,6 +553,7 @@ print(response.json())''',
     def _infer_tasks_from_config(self, config: Dict) -> List[str]:
         """config에서 지원 가능한 태스크 추론"""
         architectures = config.get('architectures', [])
+        model_type = config.get('model_type', '').lower()
         tasks = []
         
         for arch in architectures:
@@ -481,8 +569,113 @@ print(response.json())''',
                 tasks.append('fill-mask')
             elif 'ForConditionalGeneration' in arch:
                 tasks.append('text2text-generation')
+            elif arch in ['XLMRobertaModel', 'BertModel', 'RobertaModel', 'DistilBertModel', 'ElectraModel']:
+                # 임베딩 모델 감지
+                tasks.append('feature-extraction')
+        
+        # 모델 타입 기반 추가 감지
+        if not tasks:
+            if any(embedding_keyword in model_type for embedding_keyword in ['embed', 'bge', 'sentence', 'retrieval']):
+                tasks.append('feature-extraction')
+            elif 'bert' in model_type or 'roberta' in model_type:
+                tasks.append('feature-extraction')
         
         return tasks
+    
+    def _extract_embedding_info(self, summary: Dict, analysis_results: Dict) -> Dict[str, Any]:
+        """임베딩 모델 전용 정보 추출"""
+        embedding_info = {
+            'embedding_dimension': summary['detailed_config'].get('hidden_size', 'N/A'),
+            'max_sequence_length': summary['max_sequence_length'],
+            'pooling_method': 'mean',  # 기본값, 실제로는 모델에 따라 다름
+            'similarity_function': 'cosine',  # 기본값
+            'multi_lingual': False,
+            'supported_languages': [],
+            'use_cases': []
+        }
+        
+        # 모델 타입 기반 임베딩 정보 추론
+        model_type = summary['model_type'].lower()
+        model_name = summary.get('model_name', '').lower()
+        
+        # 다국어 지원 감지
+        if any(keyword in model_type for keyword in ['xlm', 'multilingual', 'mbert']) or \
+           any(keyword in model_name for keyword in ['multilingual', 'bge-m3', 'xlm']):
+            embedding_info['multi_lingual'] = True
+            embedding_info['supported_languages'] = ['english', 'chinese', 'japanese', 'korean', 'multilingual']
+        
+        # BGE-M3 특화 정보
+        if 'bge-m3' in model_name or 'bge-m3' in model_type:
+            embedding_info.update({
+                'model_family': 'BGE (Beijing Academy of Artificial Intelligence)',
+                'specialization': 'Multi-lingual dense retrieval',
+                'pooling_method': 'cls_pooling',
+                'similarity_function': 'cosine',
+                'max_sequence_length': 8192,
+                'supported_languages': ['english', 'chinese', 'japanese', 'korean', 'multilingual'],
+                'use_cases': [
+                    'Semantic search',
+                    'Document retrieval',
+                    'Cross-lingual similarity',
+                    'Text clustering',
+                    'Recommendation systems'
+                ]
+            })
+        
+        # 사용 사례 추가
+        if not embedding_info['use_cases']:
+            embedding_info['use_cases'] = [
+                'Sentence similarity',
+                'Semantic search',
+                'Text clustering',
+                'Information retrieval'
+            ]
+        
+        return embedding_info
+    
+    def _analyze_model_capabilities(self, summary: Dict, analysis_results: Dict) -> List[str]:
+        """모델 능력 분석"""
+        capabilities = []
+        
+        # 기본 능력
+        if summary['supported_tasks']:
+            for task in summary['supported_tasks']:
+                if task == 'text-classification':
+                    capabilities.append('텍스트 분류 (감정 분석, 스팸 감지 등)')
+                elif task == 'feature-extraction':
+                    capabilities.append('텍스트 임베딩 생성')
+                    capabilities.append('의미적 유사도 계산')
+                elif task == 'text-generation':
+                    capabilities.append('텍스트 생성')
+                elif task == 'question-answering':
+                    capabilities.append('질문 답변')
+                elif task == 'fill-mask':
+                    capabilities.append('빈 칸 채우기')
+        
+        # 모델 크기 기반 능력
+        if summary['total_parameters'] > 1000000000:  # 1B 이상
+            capabilities.append('대규모 언어 모델 (복잡한 추론 가능)')
+        elif summary['total_parameters'] > 100000000:  # 100M 이상
+            capabilities.append('중대형 모델 (일반적인 NLP 태스크 처리)')
+        
+        # 시퀀스 길이 기반 능력
+        if summary['max_sequence_length'] > 4000:
+            capabilities.append('긴 문서 처리 가능')
+        elif summary['max_sequence_length'] > 1000:
+            capabilities.append('중간 길이 텍스트 처리')
+        
+        # 임베딩 모델 특화 능력
+        if 'feature-extraction' in summary['supported_tasks']:
+            capabilities.append('의미적 검색 시스템 구축')
+            capabilities.append('문서 클러스터링')
+            capabilities.append('추천 시스템 구축')
+            
+            # 다국어 지원 확인
+            if summary.get('embedding_info', {}).get('multi_lingual', False):
+                capabilities.append('다국어 텍스트 처리')
+                capabilities.append('교차 언어 검색')
+        
+        return capabilities
     
     def _estimate_parameters(self, config: Dict) -> int:
         """config에서 파라미터 수 추정"""
