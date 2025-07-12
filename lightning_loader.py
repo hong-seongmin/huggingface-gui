@@ -346,9 +346,27 @@ class LightningModelLoader:
                     # 단일 Linear 레이어만
                     self.classifier = nn.Linear(1, 3)  # 극도로 단순화
                     
+                    # transformers 파이프라인을 위한 config 속성 추가
+                    class SimpleConfig:
+                        def __init__(self):
+                            self.model_type = "nano"
+                            self.hidden_size = 1
+                            self.num_labels = 3
+                            self.vocab_size = 1000
+                            self.pad_token_id = 0
+                            self.id2label = {0: "NEGATIVE", 1: "NEUTRAL", 2: "POSITIVE"}
+                            self.label2id = {"NEGATIVE": 0, "NEUTRAL": 1, "POSITIVE": 2}
+                    
+                    self.config = SimpleConfig()
+                    
                 def forward(self, input_ids=None, **kwargs):
                     batch_size = input_ids.size(0) if input_ids is not None else 1
-                    return self.classifier(torch.ones(batch_size, 1))
+                    logits = self.classifier(torch.ones(batch_size, 1))
+                    # transformers 파이프라인과 호환되는 출력 형태
+                    class SimpleOutput:
+                        def __init__(self, logits):
+                            self.logits = logits
+                    return SimpleOutput(logits)
                 
                 def eval(self):
                     return self
