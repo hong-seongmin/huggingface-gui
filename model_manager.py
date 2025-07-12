@@ -3,10 +3,19 @@ import psutil
 import torch
 import os
 import re
+import hashlib
 from typing import Dict, List, Optional, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from model_analyzer import ComprehensiveModelAnalyzer
+from model_optimization import optimizer
+from model_cache import model_cache
+from fast_tensor_loader import fast_loader
+from parallel_model_loader import parallel_loader
+from cpu_optimizer import cpu_optimizer
+from extreme_optimizer import extreme_optimizer
+from lightning_loader import lightning_loader
+from detailed_profiler import profiler
 from huggingface_hub import hf_hub_download, snapshot_download, HfApi
 
 @dataclass
@@ -146,7 +155,216 @@ class MultiModelManager:
         while model_name in self.models:
             model_name = f"{original_name}_{counter}"
             counter += 1
-        def _load():
+        
+        print(f"[DEBUG] load_model_async 시작: {model_name}, {model_path}")
+        
+        # 로딩 락 설정
+        if model_name not in self.loading_locks:
+            self.loading_locks[model_name] = threading.Lock()
+        
+        # 스레드 시작
+        print(f"[DEBUG] 스레드 생성 중: {model_name}")
+        thread = threading.Thread(
+            target=self._load_model_sync, 
+            args=(model_name, model_path, callback),
+            name=f"ModelLoad-{model_name}"
+        )
+        thread.daemon = True
+        print(f"[DEBUG] 스레드 시작 전: {model_name}")
+        thread.start()
+        print(f"[DEBUG] 스레드 시작됨: {model_name}, thread={thread}")
+        
+        return thread
+    
+    def _load_model_sync(self, model_name: str, model_path: str, callback: Optional[Callable] = None):
+        """실제 모델 로딩 작업 (스레드에서 실행)"""
+        import time
+        import threading
+        import queue
+        
+        start_time = time.time()
+        
+        def load_model_ultra_fast(actual_model_path, device):
+            """Ultra-Fast 모델 로딩 - 상세한 병목 분석 포함"""
+            print(f"[ULTRA-FAST] 혁신적인 모델 로딩 시작")
+            
+            # 상세한 프로파일링 시작
+            profiler.start_profiling("Ultra-Fast 모델 로딩")
+            profiler.profile_transformers_loading()
+            profiler.profile_safetensors_loading()
+            profiler.memory_snapshot("초기 상태")
+            
+            # 0단계: Lightning 로딩 시도 (초고속)
+            try:
+                profiler.checkpoint("0단계: Lightning 로딩 시도")
+                model, tokenizer, load_time = lightning_loader.lightning_load(actual_model_path, device)
+                
+                if model and tokenizer:
+                    profiler.checkpoint(f"Lightning 로딩 성공: {load_time:.1f}초")
+                    profiler.memory_snapshot("Lightning 완료")
+                    
+                    # 분석 리포트 출력
+                    profiler.print_detailed_report()
+                    return model, tokenizer, load_time
+                else:
+                    profiler.checkpoint("Lightning 로딩 실패, 1단계로 전환")
+                    
+            except Exception as e:
+                profiler.checkpoint(f"Lightning 로딩 오류: {e}")
+            
+            # 1단계: 병렬 로딩 시도 (가장 빠름)
+            try:
+                profiler.checkpoint("1단계: 병렬 로딩 시도")
+                profiler.memory_snapshot("병렬 로딩 시작")
+                
+                model, tokenizer, load_time = parallel_loader.load_model_and_tokenizer_parallel(
+                    actual_model_path, device
+                )
+                
+                if model and tokenizer:
+                    profiler.checkpoint(f"병렬 로딩 성공: {load_time:.1f}초")
+                    profiler.memory_snapshot("병렬 로딩 완료")
+                    
+                    # CPU 최적화 적용
+                    profiler.checkpoint("CPU 최적화 시작")
+                    model = cpu_optimizer.optimize_model_for_cpu(model, optimize_level=3)
+                    profiler.checkpoint("CPU 최적화 완료")
+                    profiler.memory_snapshot("최적화 완료")
+                    
+                    # 분석 리포트 출력
+                    profiler.print_detailed_report()
+                    return model, tokenizer, load_time
+                else:
+                    profiler.checkpoint("병렬 로딩 실패, 2단계로 전환")
+                    
+            except Exception as e:
+                profiler.checkpoint(f"병렬 로딩 오류: {e}")
+            
+            # 2단계: 직접 텐서 로딩 시도 (매우 빠름)
+            try:
+                profiler.checkpoint("2단계: 직접 텐서 로딩 시도")
+                profiler.memory_snapshot("직접 로딩 시작")
+                
+                # 모델 직접 로딩
+                model, model_time = fast_loader.load_model_ultra_fast(actual_model_path, device)
+                
+                if model:
+                    profiler.checkpoint(f"직접 텐서 로딩 성공: {model_time:.1f}초")
+                    profiler.memory_snapshot("모델 로딩 완료")
+                    
+                    # 토크나이저 로딩
+                    tokenizer, tokenizer_time = fast_loader.load_tokenizer_fast(actual_model_path)
+                    
+                    total_time = model_time + tokenizer_time
+                    profiler.checkpoint(f"전체 로딩 시간: {total_time:.1f}초")
+                    profiler.memory_snapshot("토크나이저 완료")
+                    
+                    # CPU 최적화 적용
+                    profiler.checkpoint("CPU 최적화 시작")
+                    model = cpu_optimizer.optimize_model_for_cpu(model, optimize_level=2)
+                    profiler.checkpoint("CPU 최적화 완료")
+                    profiler.memory_snapshot("최적화 완료")
+                    
+                    # 분석 리포트 출력
+                    profiler.print_detailed_report()
+                    return model, tokenizer, total_time
+                else:
+                    profiler.checkpoint("직접 텐서 로딩 실패, 3단계로 전환")
+                    
+            except Exception as e:
+                profiler.checkpoint(f"직접 텐서 로딩 오류: {e}")
+            
+            # 3단계: EXTREME 최적화 로딩 (최후의 무기)
+            try:
+                profiler.checkpoint("3단계: EXTREME 최적화 로딩")
+                profiler.memory_snapshot("EXTREME 시작")
+                
+                # EXTREME 최적화 적용
+                model, tokenizer, load_time = extreme_optimizer.ultra_fast_model_loading(
+                    actual_model_path, device
+                )
+                
+                if model and tokenizer:
+                    profiler.checkpoint(f"EXTREME 로딩 성공: {load_time:.1f}초")
+                    profiler.memory_snapshot("EXTREME 완료")
+                    
+                    # CPU 최적화 적용
+                    profiler.checkpoint("CPU 최적화 시작")
+                    model = cpu_optimizer.optimize_model_for_cpu(model, optimize_level=1)
+                    profiler.checkpoint("CPU 최적화 완료")
+                    profiler.memory_snapshot("최적화 완료")
+                    
+                    # 분석 리포트 출력
+                    profiler.print_detailed_report()
+                    return model, tokenizer, load_time
+                else:
+                    profiler.checkpoint("EXTREME 로딩 실패, 최후 폴백")
+                    raise ValueError("EXTREME 로딩 실패")
+                
+            except Exception as e:
+                profiler.checkpoint(f"EXTREME 로딩도 실패: {e}")
+                
+                # 최후 폴백: 기본 로딩
+                profiler.checkpoint("최후 폴백: 기본 로딩")
+                profiler.memory_snapshot("폴백 시작")
+                
+                import time
+                fallback_start = time.time()
+                
+                try:
+                    from transformers import AutoModel, AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
+                    
+                    profiler.checkpoint("Config 로딩 시작")
+                    config = AutoConfig.from_pretrained(actual_model_path, local_files_only=True)
+                    profiler.checkpoint("Config 로딩 완료")
+                    
+                    is_classification = (
+                        hasattr(config, 'architectures') and 
+                        config.architectures and
+                        any('Classification' in arch for arch in config.architectures)
+                    )
+                    
+                    profiler.checkpoint("모델 로딩 시작 (폴백)")
+                    profiler.memory_snapshot("모델 로딩 전")
+                    
+                    if is_classification:
+                        model = AutoModelForSequenceClassification.from_pretrained(
+                            actual_model_path, local_files_only=True
+                        )
+                    else:
+                        model = AutoModel.from_pretrained(
+                            actual_model_path, local_files_only=True
+                        )
+                    
+                    profiler.checkpoint("모델 로딩 완료 (폴백)")
+                    profiler.memory_snapshot("모델 로딩 후")
+                    
+                    profiler.checkpoint("토크나이저 로딩 시작 (폴백)")
+                    tokenizer = AutoTokenizer.from_pretrained(
+                        actual_model_path, local_files_only=True
+                    )
+                    profiler.checkpoint("토크나이저 로딩 완료 (폴백)")
+                    
+                    model = model.to(device)
+                    model.eval()
+                    profiler.checkpoint("모델 최종 설정 완료")
+                    profiler.memory_snapshot("폴백 완료")
+                    
+                    load_time = time.time() - fallback_start
+                    profiler.checkpoint(f"최후 폴백 완료: {load_time:.1f}초")
+                    
+                    # 분석 리포트 출력
+                    profiler.print_detailed_report()
+                    return model, tokenizer, load_time
+                    
+                except Exception as final_e:
+                    profiler.checkpoint(f"모든 로딩 방법 실패: {final_e}")
+                    profiler.print_detailed_report()
+                    raise
+        
+        try:
+            print(f"[DEBUG] _load_model_sync 시작: {model_name}, {model_path}")
+            
             # 모델 정보 초기화
             self.models[model_name] = ModelInfo(
                 name=model_name, 
@@ -154,99 +372,145 @@ class MultiModelManager:
                 status="loading"
             )
             
+            print(f"[DEBUG] 모델 정보 초기화됨: {model_name}")
             self._notify_callbacks(model_name, "loading_started", {})
             
+            # 메모리 사용량 측정 시작
+            process = psutil.Process()
+            mem_before = process.memory_info().rss
+            
+            # HuggingFace 모델 ID인지 확인하고 다운로드
+            actual_model_path = model_path
+            if self._is_huggingface_model_id(model_path):
+                self._notify_callbacks(model_name, "downloading", {'model_id': model_path})
+                actual_model_path = self._download_huggingface_model(model_path)
+                self.models[model_name].path = actual_model_path  # 실제 경로로 업데이트
+            
+            # 모델 분석
+            analysis = self.model_analyzer.analyze_model_directory(actual_model_path)
+            self.models[model_name].config_analysis = analysis
+            
+            # 범용적인 transformers 모델 로드
+            from transformers import AutoModel, AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
+            
+            # 최적 디바이스 자동 선택
+            device = optimizer.get_optimal_device()
+            print(f"[DEBUG] 자동 선택된 디바이스: {device}")
+            
+            # 메모리 상태 체크
+            memory_info = self.get_memory_info()
+            available_memory_gb = memory_info['system_memory']['available'] / (1024**3)
+            print(f"[DEBUG] 사용 가능한 메모리: {available_memory_gb:.1f}GB")
+            print(f"[DEBUG] 디바이스 설정: {device} (Streamlit 안정성을 위해 CPU 강제)")
+            
+            # accelerate 사용 가능 여부 확인 (단순화)
             try:
-                # 메모리 사용량 측정 시작
-                process = psutil.Process()
-                mem_before = process.memory_info().rss
+                import accelerate
+                use_device_map = device == "cuda"
+            except ImportError:
+                use_device_map = False
+            
+            # 설정에서 architecture 확인
+            config = AutoConfig.from_pretrained(actual_model_path)
+            is_classification_model = (
+                hasattr(config, 'architectures') and 
+                config.architectures and
+                any('Classification' in arch for arch in config.architectures)
+            )
+            
+            print(f"[DEBUG] 모델 로딩 시작: classification={is_classification_model}")
+            
+            # 캐시 키 생성
+            cache_key = f"{model_name}_{actual_model_path}_{device}_{is_classification_model}"
+            cache_key_hash = hashlib.md5(cache_key.encode()).hexdigest()
+            
+            # 캐시에서 모델 확인
+            cached_result = model_cache.get_cached_model(cache_key_hash)
+            if cached_result:
+                model, tokenizer = cached_result
+                print(f"[DEBUG] 캐시에서 모델 로드 완료 (즉시)")
+            else:
+                # 캐시 미스 - Ultra-Fast 로딩 시작
+                print(f"[DEBUG] 캐시 미스 - Ultra-Fast 로딩 시작")
                 
-                # HuggingFace 모델 ID인지 확인하고 다운로드
-                actual_model_path = model_path
-                if self._is_huggingface_model_id(model_path):
-                    self._notify_callbacks(model_name, "downloading", {'model_id': model_path})
-                    actual_model_path = self._download_huggingface_model(model_path)
-                    self.models[model_name].path = actual_model_path  # 실제 경로로 업데이트
-                
-                # 모델 분석
-                analysis = self.model_analyzer.analyze_model_directory(actual_model_path)
-                self.models[model_name].config_analysis = analysis
-                
-                # 모델 로드
-                from transformers import AutoModel, AutoTokenizer
-                
-                # 디바이스 설정
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                
-                # accelerate 사용 가능 여부 확인
                 try:
-                    import accelerate
-                    use_device_map = device == "cuda"
-                except ImportError:
-                    use_device_map = False
-                
-                # 모델 로드 (accelerate 없으면 기본 방식 사용)
-                if use_device_map:
-                    model = AutoModel.from_pretrained(
-                        actual_model_path,
-                        torch_dtype=torch.float16,
-                        device_map="auto"
-                    )
-                else:
-                    model = AutoModel.from_pretrained(
-                        actual_model_path,
-                        torch_dtype=torch.float16 if device == "cuda" else torch.float32
-                    )
-                    # accelerate 없으면 수동으로 디바이스 설정
-                    if device == "cuda":
-                        model = model.to(device)
-                
-                tokenizer = AutoTokenizer.from_pretrained(actual_model_path)
-                
-                # 메모리 사용량 계산
-                mem_after = process.memory_info().rss
-                memory_usage = (mem_after - mem_before) / 1024 / 1024  # MB
-                
-                # 모델 정보 업데이트
-                self.models[model_name].model = model
-                self.models[model_name].tokenizer = tokenizer
-                self.models[model_name].memory_usage = memory_usage
-                self.models[model_name].load_time = datetime.now()
-                self.models[model_name].status = "loaded"
-                
-                success_data = {
-                    'memory_usage': memory_usage,
-                    'load_time': self.models[model_name].load_time,
-                    'analysis': analysis['model_summary'],
-                    'original_path': model_path,
-                    'actual_path': actual_model_path
-                }
-                
-                self._notify_callbacks(model_name, "loading_success", success_data)
-                
-                if callback:
-                    callback(model_name, True, f"Model loaded successfully. Memory usage: {memory_usage:.2f} MB")
+                    # 혁신적인 Ultra-Fast 로딩
+                    result = load_model_ultra_fast(actual_model_path, device)
                     
-            except Exception as e:
-                error_msg = str(e)
+                    if len(result) == 3:
+                        model, tokenizer, load_time = result
+                        print(f"[DEBUG] Ultra-Fast 로딩 성공: {load_time:.1f}초")
+                    else:
+                        raise ValueError("Ultra-Fast 로딩 결과 형식 오류")
+                    
+                    # 캐시에 저장
+                    cache_config = {
+                        'device': device,
+                        'load_time': load_time,
+                        'model_path': actual_model_path,
+                        'ultra_fast': True
+                    }
+                    model_cache.cache_model(cache_key_hash, model, tokenizer, actual_model_path, cache_config)
+                    
+                except Exception as e:
+                    print(f"[DEBUG] Ultra-Fast 로딩 실패: {e}")
+                    raise
+            
+            # 메모리 사용량 계산
+            mem_after = process.memory_info().rss
+            memory_usage = (mem_after - mem_before) / 1024 / 1024  # MB
+            
+            # 모델 정보 업데이트
+            self.models[model_name].model = model
+            self.models[model_name].tokenizer = tokenizer
+            self.models[model_name].memory_usage = memory_usage
+            self.models[model_name].load_time = datetime.now()
+            self.models[model_name].status = "loaded"
+            
+            success_data = {
+                'memory_usage': memory_usage,
+                'load_time': self.models[model_name].load_time,
+                'analysis': analysis['model_summary'],
+                'original_path': model_path,
+                'actual_path': actual_model_path
+            }
+            
+            self._notify_callbacks(model_name, "loading_success", success_data)
+            
+            if callback:
+                callback(model_name, True, f"Model loaded successfully. Memory usage: {memory_usage:.2f} MB")
+        
+        except TimeoutError as e:
+            error_msg = str(e)
+            print(f"[DEBUG] 모델 로딩 타임아웃: {error_msg}")
+            
+            if model_name in self.models:
                 self.models[model_name].status = "error"
                 self.models[model_name].error_message = error_msg
+            
+            self._notify_callbacks(model_name, "loading_error", {'error': error_msg})
+            
+            if callback:
+                callback(model_name, False, error_msg)
                 
-                self._notify_callbacks(model_name, "loading_error", {'error': error_msg})
-                
-                if callback:
-                    callback(model_name, False, error_msg)
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[DEBUG] 모델 로딩 오류: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            
+            if model_name in self.models:
+                self.models[model_name].status = "error"
+                self.models[model_name].error_message = error_msg
+            
+            self._notify_callbacks(model_name, "loading_error", {'error': error_msg})
+            
+            if callback:
+                callback(model_name, False, error_msg)
         
-        # 로딩 락 설정
-        if model_name not in self.loading_locks:
-            self.loading_locks[model_name] = threading.Lock()
-        
-        # 스레드 시작
-        thread = threading.Thread(target=_load)
-        thread.daemon = True
-        thread.start()
-        
-        return thread
+        finally:
+            elapsed = time.time() - start_time
+            print(f"[DEBUG] 모델 로딩 총 소요시간: {elapsed:.1f}초")
     
     def unload_model(self, model_name: str) -> bool:
         """모델 언로드"""
