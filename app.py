@@ -1595,6 +1595,7 @@ def render_fastapi_server():
                         port = model_ports.get(model_name, 8000)
                         active_ports.append(f"{model_name}:{port}")
                     st.info(f"🚀 모델별 포트 설정: {', '.join(active_ports)}")
+                    st.rerun()  # UI 즉시 업데이트
                 else:
                     # 기본 단일 포트 모드
                     result = st.session_state['fastapi_server'].start_server()
@@ -1602,6 +1603,7 @@ def render_fastapi_server():
                     # Server state changes are not critical to save immediately
                     st.success(result)
                     st.info("🚀 모든 모델이 기본 포트(8000)에서 실행됩니다.")
+                    st.rerun()  # UI 즉시 업데이트
                     
             except Exception as e:
                 st.error(f"서버 시작 실패: {e}")
@@ -1616,6 +1618,7 @@ def render_fastapi_server():
                 st.session_state['fastapi_server_running'] = False
                 # Server state changes are not critical to save immediately
                 st.info(result)
+                st.rerun()  # UI 즉시 업데이트
             except Exception as e:
                 st.error(f"서버 중지 실패: {e}")
     
