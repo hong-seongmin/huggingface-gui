@@ -356,8 +356,27 @@ class LightningModelLoader:
                             self.pad_token_id = 0
                             self.id2label = {0: "NEGATIVE", 1: "NEUTRAL", 2: "POSITIVE"}
                             self.label2id = {"NEGATIVE": 0, "NEUTRAL": 1, "POSITIVE": 2}
+                            # transformers에서 필요한 추가 속성들
+                            self._commit_hash = "nano-model"
+                            self._name_or_path = "nano-model"
+                            self.architectures = ["NanoModel"]
+                            self.torch_dtype = "float32"
+                            self.transformers_version = "4.0.0"
+                            self.tokenizer_class = "AutoTokenizer"
+                            self.use_cache = True
+                            self.task_specific_params = {}
+                            self.finetuning_task = "text-classification"
+                            self.problem_type = "single_label_classification"
                     
                     self.config = SimpleConfig()
+                
+                @property
+                def device(self):
+                    """transformers 파이프라인에서 필요한 device 속성"""
+                    try:
+                        return next(self.parameters()).device
+                    except StopIteration:
+                        return torch.device('cpu')
                     
                 def forward(self, input_ids=None, **kwargs):
                     batch_size = input_ids.size(0) if input_ids is not None else 1
