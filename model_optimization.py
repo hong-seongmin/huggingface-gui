@@ -11,8 +11,8 @@ class ModelLoadingOptimizer:
     """모델 로딩 성능 최적화 클래스"""
     
     def __init__(self):
-        self.setup_environment()
         self.logger = self._setup_logger()
+        self.setup_environment()
     
     def setup_environment(self):
         """극한 최적화된 환경 변수 설정"""
