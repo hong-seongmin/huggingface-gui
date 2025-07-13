@@ -1736,6 +1736,8 @@ def render_fastapi_server():
                     # 모델 포트 찾기
                     if hasattr(st.session_state['fastapi_server'], 'get_model_server_port'):
                         model_port = st.session_state['fastapi_server'].get_model_server_port(model_name)
+                        if model_port is None:
+                            model_port = 8000  # 기본 포트 사용
                     else:
                         model_port = 8000
                     
@@ -1984,6 +1986,11 @@ def render_fastapi_server():
             # 선택된 모델의 포트 찾기 (메서드 존재 확인)
             if hasattr(st.session_state['fastapi_server'], 'get_model_server_port'):
                 model_port = st.session_state['fastapi_server'].get_model_server_port(selected_model)
+                # 포트를 찾지 못했으면 기본 포트 시도
+                if model_port is None:
+                    # 서버가 실행 중이면 기본 포트 사용
+                    if st.session_state['fastapi_server'].is_running():
+                        model_port = st.session_state['fastapi_server'].default_port
             else:
                 # 이전 버전 호환성 - 기본 포트 사용
                 default_port = getattr(st.session_state['fastapi_server'], 'default_port', getattr(st.session_state['fastapi_server'], 'port', 8000))
