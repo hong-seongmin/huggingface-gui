@@ -15,6 +15,7 @@ from parallel_model_loader import parallel_loader
 from cpu_optimizer import cpu_optimizer
 from extreme_optimizer import extreme_optimizer
 from lightning_loader import lightning_loader
+from device_manager import device_manager
 from detailed_profiler import profiler
 from huggingface_hub import hf_hub_download, snapshot_download, HfApi
 
@@ -201,6 +202,10 @@ class MultiModelManager:
                 
                 if model and tokenizer:
                     profiler.checkpoint(f"Lightning 로딩 성공: {load_time:.1f}초")
+                    
+                    # 통합 디바이스 관리자로 일관성 보장
+                    model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
+                    profiler.checkpoint("디바이스 일관성 보장 완료")
                     profiler.memory_snapshot("Lightning 완료")
                     
                     # 분석 리포트 출력
@@ -224,6 +229,10 @@ class MultiModelManager:
                 if model and tokenizer:
                     profiler.checkpoint(f"병렬 로딩 성공: {load_time:.1f}초")
                     profiler.memory_snapshot("병렬 로딩 완료")
+                    
+                    # 통합 디바이스 관리자로 일관성 보장
+                    model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
+                    profiler.checkpoint("디바이스 일관성 보장 완료")
                     
                     # CPU 최적화 적용
                     profiler.checkpoint("CPU 최적화 시작")
@@ -259,6 +268,10 @@ class MultiModelManager:
                     profiler.checkpoint(f"전체 로딩 시간: {total_time:.1f}초")
                     profiler.memory_snapshot("토크나이저 완료")
                     
+                    # 통합 디바이스 관리자로 일관성 보장
+                    model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
+                    profiler.checkpoint("디바이스 일관성 보장 완료")
+                    
                     # CPU 최적화 적용
                     profiler.checkpoint("CPU 최적화 시작")
                     model = cpu_optimizer.optimize_model_for_cpu(model, optimize_level=2)
@@ -287,6 +300,10 @@ class MultiModelManager:
                 if model and tokenizer:
                     profiler.checkpoint(f"EXTREME 로딩 성공: {load_time:.1f}초")
                     profiler.memory_snapshot("EXTREME 완료")
+                    
+                    # 통합 디바이스 관리자로 일관성 보장
+                    model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
+                    profiler.checkpoint("디바이스 일관성 보장 완료")
                     
                     # CPU 최적화 적용
                     profiler.checkpoint("CPU 최적화 시작")
@@ -345,9 +362,10 @@ class MultiModelManager:
                     )
                     profiler.checkpoint("토크나이저 로딩 완료 (폴백)")
                     
-                    model = model.to(device)
+                    # 통합 디바이스 관리자로 일관성 보장
+                    model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
                     model.eval()
-                    profiler.checkpoint("모델 최종 설정 완료")
+                    profiler.checkpoint("모델 최종 설정 완료 (통합 디바이스 관리)")
                     profiler.memory_snapshot("폴백 완료")
                     
                     load_time = time.time() - fallback_start

@@ -9,6 +9,8 @@ from model_manager import MultiModelManager
 from transformers import pipeline
 import asyncio
 import torch
+import logging
+from device_manager import device_manager
 
 class PredictionRequest(BaseModel):
     text: str
@@ -34,6 +36,9 @@ class FastAPIServer:
         
         # 파이프라인 캐시
         self.pipeline_cache = {}
+        
+        # 로거 설정
+        self.logger = logging.getLogger("FastAPIServer")
         
         # 기본 서버 (하위 호환성을 위해 유지)
         self.app = self.create_app()
@@ -166,104 +171,9 @@ class FastAPIServer:
             task = available_tasks[0]
             
             try:
-                # 텍스트 분류의 경우 파이프라인 우회하여 직접 처리
-                if task == "text-classification":
-                    try:
-                        # 직접 모델 추론 (파이프라인 우회)
-                        inputs = tokenizer(request.text, return_tensors="pt", padding=True, truncation=True)
-                        
-                        # GPU/CPU 디바이스 일치 확인
-                        try:
-                            device = next(model.parameters()).device
-                            inputs = {k: v.to(device) for k, v in inputs.items()}
-                        except StopIteration:
-                            # 모델에 파라미터가 없는 경우 CPU 사용
-                            device = torch.device('cpu')
-                        
-                        with torch.no_grad():
-                            outputs = model(**inputs)
-                            if hasattr(outputs, 'logits'):
-                                import torch.nn.functional as F
-                                probs = F.softmax(outputs.logits, dim=-1)
-                                predicted_class = torch.argmax(outputs.logits, dim=-1)
-                                
-                                # 모델의 label 매핑 가져오기
-                                if hasattr(model.config, 'id2label'):
-                                    id2label = model.config.id2label
-                                    predicted_label = id2label.get(predicted_class.item(), f"LABEL_{predicted_class.item()}")
-                                else:
-                                    predicted_label = f"LABEL_{predicted_class.item()}"
-                                
-                                result = [{
-                                    "label": predicted_label,
-                                    "score": probs[0][predicted_class.item()].item()
-                                }]
-                            else:
-                                raise Exception(f"Model output does not contain logits: {outputs}")
-                    except Exception as e:
-                        raise HTTPException(
-                            status_code=500, 
-                            detail=f"Direct model inference failed: {str(e)}"
-                        )
-                else:
-                    # 다른 태스크의 경우 파이프라인 사용
-                    cache_key = f"{model_name}_{task}"
-                    if cache_key not in self.pipeline_cache:
-                        # 안전한 파이프라인 생성 - 각 태스크별로 적절한 파라미터 사용
-                        try:
-                            if task == "text-generation":
-                                self.pipeline_cache[cache_key] = pipeline(
-                                    task=task,
-                                    model=model,
-                                    tokenizer=tokenizer,
-                                    return_full_text=False
-                                )
-                            elif task == "feature-extraction":
-                                # 임베딩 모델용 파이프라인
-                                self.pipeline_cache[cache_key] = pipeline(
-                                    task=task,
-                                    model=model,
-                                    tokenizer=tokenizer
-                                )
-                            else:
-                                # 기타 태스크는 기본 파라미터만 사용
-                                self.pipeline_cache[cache_key] = pipeline(
-                                    task=task,
-                                    model=model,
-                                    tokenizer=tokenizer
-                                )
-                        except Exception as e:
-                            # 파이프라인 생성 실패 시 더 단순한 방법 시도
-                            print(f"Pipeline creation failed for {task}: {e}")
-                            try:
-                                # 가장 기본적인 형태로 재시도
-                                self.pipeline_cache[cache_key] = pipeline(
-                                    task,
-                                    model=model,
-                                    tokenizer=tokenizer
-                                )
-                            except Exception as e2:
-                                raise HTTPException(
-                                    status_code=500, 
-                                    detail=f"Failed to create pipeline for {task}: {str(e2)}"
-                                )
+                # 통합 추론 엔진 - 모든 태스크에 대해 직접 모델 추론 사용
+                result = self._unified_inference(model, tokenizer, request.text, task)
                 
-                    pipe = self.pipeline_cache[cache_key]
-                    
-                    # 태스크별 파라미터 설정
-                    if task == "text-generation":
-                        result = pipe(
-                            request.text,
-                            max_length=request.max_length,
-                            temperature=request.temperature,
-                            top_p=request.top_p,
-                            top_k=request.top_k,
-                            do_sample=request.do_sample,
-                            pad_token_id=tokenizer.eos_token_id
-                        )
-                    else:
-                        # 기타 태스크 (feature-extraction 등)
-                        result = pipe(request.text)
                 
                 
                 return {
@@ -566,14 +476,25 @@ class FastAPIServer:
     
     def get_model_server_port(self, model_name: str) -> int:
         """특정 모델이 실행 중인 포트 반환"""
+        # 1. model_ports 딕셔너리에서 확인
         if model_name in self.model_ports:
             port = self.model_ports[model_name]
             if self.is_running(port):
                 return port
         
-        # 기본 서버에서 실행 중인지 확인
+        # 2. 활성 서버에서 해당 모델을 찾기 (동기화 보완)
+        for port, server_info in self.servers.items():
+            if server_info.get('running', False):
+                models = server_info.get('models', [])
+                if model_name in models:
+                    return port
+        
+        # 3. 기본 서버에서 실행 중인지 확인
         if self.running:
-            return self.default_port
+            # 로드된 모델 목록에 해당 모델이 있는지 확인
+            loaded_models = self.model_manager.get_loaded_models()
+            if model_name in loaded_models:
+                return self.default_port
         
         return None
     
@@ -694,6 +615,94 @@ class FastAPIServer:
                 return result == 0  # 연결 성공하면 포트 사용 중
         except:
             return False
+    
+    def _unified_inference(self, model: Any, tokenizer: Any, text: str, task: str) -> Any:
+        """모든 태스크에 대한 통합 추론 엔진"""
+        try:
+            # 디바이스 일관성 보장
+            model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
+            
+            # 입력 토큰화
+            inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+            
+            # 입력을 모델과 같은 디바이스로 이동
+            inputs = device_manager.prepare_inputs(inputs, model)
+            
+            # 모델 디바이스 일관성 검증
+            if not device_manager.validate_device_consistency(model):
+                raise Exception("Model device consistency validation failed")
+            
+            with torch.no_grad():
+                outputs = model(**inputs)
+                
+                if task == "text-classification":
+                    return self._process_classification_output(outputs, model)
+                elif task == "feature-extraction":
+                    return self._process_embedding_output(outputs, inputs)
+                elif task == "text-generation":
+                    return self._process_generation_output(outputs, tokenizer)
+                else:
+                    # 기본 처리: 출력을 그대로 반환
+                    if hasattr(outputs, 'last_hidden_state'):
+                        return outputs.last_hidden_state.cpu().numpy().tolist()
+                    elif hasattr(outputs, 'logits'):
+                        return outputs.logits.cpu().numpy().tolist()
+                    else:
+                        return str(outputs)
+                        
+        except Exception as e:
+            self.logger.error(f"통합 추론 실패: {e}")
+            raise Exception(f"Unified inference failed: {str(e)}")
+    
+    def _process_classification_output(self, outputs: Any, model: Any) -> List[Dict[str, Any]]:
+        """텍스트 분류 출력 처리"""
+        if hasattr(outputs, 'logits'):
+            import torch.nn.functional as F
+            probs = F.softmax(outputs.logits, dim=-1)
+            predicted_class = torch.argmax(outputs.logits, dim=-1)
+            
+            # 모델의 label 매핑 가져오기
+            if hasattr(model.config, 'id2label'):
+                id2label = model.config.id2label
+                predicted_label = id2label.get(predicted_class.item(), f"LABEL_{predicted_class.item()}")
+            else:
+                predicted_label = f"LABEL_{predicted_class.item()}"
+            
+            return [{
+                "label": predicted_label,
+                "score": probs[0][predicted_class.item()].item()
+            }]
+        else:
+            raise Exception(f"Classification model output does not contain logits: {outputs}")
+    
+    def _process_embedding_output(self, outputs: Any, inputs: Dict[str, torch.Tensor]) -> List[List[float]]:
+        """임베딩 출력 처리"""
+        if hasattr(outputs, 'last_hidden_state'):
+            # 평균 풀링 사용
+            attention_mask = inputs.get('attention_mask')
+            if attention_mask is not None:
+                # 마스크된 토큰 제외하고 평균
+                masked_embeddings = outputs.last_hidden_state * attention_mask.unsqueeze(-1)
+                pooled_embeddings = masked_embeddings.sum(dim=1) / attention_mask.sum(dim=1, keepdim=True)
+            else:
+                # 단순 평균
+                pooled_embeddings = outputs.last_hidden_state.mean(dim=1)
+            
+            return pooled_embeddings.cpu().numpy().tolist()
+        elif hasattr(outputs, 'pooler_output'):
+            return outputs.pooler_output.cpu().numpy().tolist()
+        else:
+            raise Exception(f"Embedding model output does not contain expected fields: {outputs}")
+    
+    def _process_generation_output(self, outputs: Any, tokenizer: Any) -> List[Dict[str, str]]:
+        """텍스트 생성 출력 처리"""
+        if hasattr(outputs, 'logits'):
+            # 다음 토큰 예측
+            next_token_id = torch.argmax(outputs.logits[0, -1, :]).item()
+            next_token = tokenizer.decode([next_token_id])
+            return [{"generated_text": next_token}]
+        else:
+            raise Exception(f"Generation model output does not contain logits: {outputs}")
 
 # 편의 함수들
 def create_api_server(model_manager: MultiModelManager, host: str = "127.0.0.1", port: int = 8000) -> FastAPIServer:
