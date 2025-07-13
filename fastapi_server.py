@@ -358,8 +358,14 @@ class FastAPIServer:
         
         # 각 포트별로 서버 시작
         for port in ports_to_start:
+            # 기존 서버 상태 확인
             if port in self.servers and self.servers[port]['running']:
                 results.append(f"Server already running on port {port}")
+                continue
+            
+            # 포트 사용 가능 여부 확인
+            if self._is_port_in_use(port):
+                results.append(f"Port {port} is already in use by another process")
                 continue
             
             # 해당 포트에서 서빙할 모델들 찾기
@@ -394,13 +400,26 @@ class FastAPIServer:
     def _start_server_on_port(self, port, target_models):
         """특정 포트에서 특정 모델들을 위한 서버 시작"""
         try:
+            import uvicorn
+            import asyncio
+            
             # 해당 포트의 앱 생성
             app = self.create_app(target_models)
+            
+            # uvicorn 서버 인스턴스 생성
+            config = uvicorn.Config(app=app, host=self.host, port=port, log_level="info")
+            server = uvicorn.Server(config)
             
             def run_server():
                 try:
                     self.servers[port]['running'] = True
-                    uvicorn.run(app, host=self.host, port=port, log_level="info")
+                    self.servers[port]['server_instance'] = server
+                    
+                    # 새로운 이벤트 루프에서 서버 실행
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(server.serve())
+                    
                 except Exception as e:
                     print(f"Server error on port {port}: {e}")
                 finally:
@@ -415,7 +434,8 @@ class FastAPIServer:
                 'app': app,
                 'thread': server_thread,
                 'running': False,
-                'models': target_models
+                'models': target_models,
+                'server_instance': None
             }
             
             server_thread.start()
@@ -434,13 +454,17 @@ class FastAPIServer:
             # 멀티 포트 서버들 중지
             for server_port in list(self.servers.keys()):
                 if self.servers[server_port]['running']:
-                    self.servers[server_port]['running'] = False
-                    results.append(f"Server on port {server_port} stop requested")
+                    result = self._stop_server_gracefully(server_port)
+                    results.append(result)
             
             # 기본 서버 중지
             if self.running:
                 self.running = False
-                results.append(f"Default server on port {self.default_port} stop requested")
+                self._force_kill_port(self.default_port)
+                results.append(f"Default server on port {self.default_port} stopped")
+            
+            # 파이프라인 캐시 정리
+            self.clear_pipeline_cache()
             
             return "; ".join(results) if results else "No servers running"
         
@@ -448,11 +472,11 @@ class FastAPIServer:
             # 특정 포트 서버 중지
             if port == self.default_port and self.running:
                 self.running = False
-                return f"Default server on port {port} stop requested"
+                self._force_kill_port(port)
+                return f"Default server on port {port} stopped"
             
             elif port in self.servers and self.servers[port]['running']:
-                self.servers[port]['running'] = False
-                return f"Server on port {port} stop requested"
+                return self._stop_server_gracefully(port)
             
             else:
                 return f"No server running on port {port}"
@@ -552,6 +576,124 @@ class FastAPIServer:
             return self.default_port
         
         return None
+    
+    def _force_kill_port(self, port):
+        """FastAPI 서버만 안전하게 중지 (Streamlit은 유지)"""
+        try:
+            import subprocess
+            import os
+            
+            # 현재 Streamlit 프로세스 PID 보호
+            streamlit_pid = os.getpid()
+            
+            # lsof로 포트 사용 프로세스 찾기
+            try:
+                result = subprocess.run(['lsof', '-ti', f':{port}'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.stdout.strip():
+                    pids = result.stdout.strip().split('\n')
+                    for pid in pids:
+                        if pid.strip():
+                            try:
+                                pid_int = int(pid.strip())
+                                # Streamlit 메인 프로세스는 건드리지 않음
+                                if pid_int != streamlit_pid:
+                                    # 프로세스 정보 확인
+                                    check_result = subprocess.run(['ps', '-p', str(pid_int), '-o', 'comm='], 
+                                                                capture_output=True, text=True, timeout=2)
+                                    process_name = check_result.stdout.strip()
+                                    
+                                    # uvicorn이나 FastAPI 관련 프로세스만 종료
+                                    if any(keyword in process_name.lower() for keyword in ['uvicorn', 'fastapi', 'python']):
+                                        # 먼저 SIGTERM으로 graceful shutdown 시도
+                                        subprocess.run(['kill', '-15', str(pid_int)], capture_output=True, timeout=2)
+                                        print(f"Sent SIGTERM to FastAPI process {pid_int} on port {port}")
+                                        
+                                        # 2초 후에도 살아있으면 SIGKILL
+                                        import time
+                                        time.sleep(2)
+                                        subprocess.run(['kill', '-9', str(pid_int)], capture_output=True, timeout=1)
+                                        print(f"Killed FastAPI process {pid_int} on port {port}")
+                            except (ValueError, subprocess.TimeoutExpired):
+                                pass
+                    return True
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                pass
+                
+        except Exception as e:
+            print(f"Error stopping FastAPI server on port {port}: {e}")
+        
+        return False
+    
+    def _stop_server_gracefully(self, port):
+        """uvicorn 서버 인스턴스를 사용한 graceful shutdown"""
+        try:
+            if port not in self.servers:
+                return f"No server found on port {port}"
+            
+            server_info = self.servers[port]
+            
+            # 서버 인스턴스가 있으면 graceful shutdown
+            if 'server_instance' in server_info and server_info['server_instance']:
+                try:
+                    server_instance = server_info['server_instance']
+                    
+                    # 비동기적으로 서버 중지 요청
+                    import asyncio
+                    import threading
+                    
+                    def shutdown_async():
+                        try:
+                            # 새로운 이벤트 루프에서 shutdown 실행
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            
+                            # 서버 종료 신호
+                            server_instance.should_exit = True
+                            
+                            # 잠시 대기
+                            import time
+                            time.sleep(1)
+                            
+                            loop.close()
+                        except Exception as e:
+                            print(f"Async shutdown error: {e}")
+                    
+                    # 별도 스레드에서 shutdown 실행
+                    shutdown_thread = threading.Thread(target=shutdown_async)
+                    shutdown_thread.start()
+                    shutdown_thread.join(timeout=3)
+                    
+                    print(f"Graceful shutdown initiated for port {port}")
+                    
+                except Exception as e:
+                    print(f"Graceful shutdown failed for port {port}: {e}")
+            
+            # 상태 업데이트
+            server_info['running'] = False
+            
+            # 포트가 여전히 사용 중이면 강제 종료
+            import time
+            time.sleep(2)  # graceful shutdown 완료 대기
+            
+            if self._is_port_in_use(port):
+                self._force_kill_port(port)
+                return f"Server on port {port} force stopped"
+            else:
+                return f"Server on port {port} gracefully stopped"
+                
+        except Exception as e:
+            return f"Failed to stop server on port {port}: {str(e)}"
+    
+    def _is_port_in_use(self, port):
+        """포트가 사용 중인지 확인"""
+        import socket
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                result = s.connect_ex(('localhost', port))
+                return result == 0  # 연결 성공하면 포트 사용 중
+        except:
+            return False
 
 # 편의 함수들
 def create_api_server(model_manager: MultiModelManager, host: str = "127.0.0.1", port: int = 8000) -> FastAPIServer:
