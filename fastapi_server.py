@@ -166,108 +166,105 @@ class FastAPIServer:
             task = available_tasks[0]
             
             try:
-                # 파이프라인 생성 또는 캐시에서 가져오기
-                cache_key = f"{model_name}_{task}"
-                if cache_key not in self.pipeline_cache:
-                    # 안전한 파이프라인 생성 - 각 태스크별로 적절한 파라미터 사용
+                # 텍스트 분류의 경우 파이프라인 우회하여 직접 처리
+                if task == "text-classification":
                     try:
-                        if task == "text-generation":
-                            self.pipeline_cache[cache_key] = pipeline(
-                                task=task,
-                                model=model,
-                                tokenizer=tokenizer,
-                                return_full_text=False
-                            )
-                        elif task == "text-classification":
-                            # 텍스트 분류는 return_full_text 파라미터 사용 안 함
-                            device = 0 if torch.cuda.is_available() else -1
-                            self.pipeline_cache[cache_key] = pipeline(
-                                task=task,
-                                model=model,
-                                tokenizer=tokenizer,
-                                device=device
-                            )
-                        elif task == "feature-extraction":
-                            # 임베딩 모델용 파이프라인
-                            self.pipeline_cache[cache_key] = pipeline(
-                                task=task,
-                                model=model,
-                                tokenizer=tokenizer
-                            )
-                        else:
-                            # 기타 태스크는 기본 파라미터만 사용
-                            self.pipeline_cache[cache_key] = pipeline(
-                                task=task,
-                                model=model,
-                                tokenizer=tokenizer
-                            )
-                    except Exception as e:
-                        # 파이프라인 생성 실패 시 더 단순한 방법 시도
-                        print(f"Pipeline creation failed for {task}: {e}")
+                        # 직접 모델 추론 (파이프라인 우회)
+                        inputs = tokenizer(request.text, return_tensors="pt", padding=True, truncation=True)
+                        
+                        # GPU/CPU 디바이스 일치 확인
                         try:
-                            # 가장 기본적인 형태로 재시도
-                            self.pipeline_cache[cache_key] = pipeline(
-                                task,
-                                model=model,
-                                tokenizer=tokenizer
-                            )
-                        except Exception as e2:
-                            raise HTTPException(
-                                status_code=500, 
-                                detail=f"Failed to create pipeline for {task}: {str(e2)}"
-                            )
-                
-                pipe = self.pipeline_cache[cache_key]
-                
-                # 태스크별 파라미터 설정
-                if task == "text-generation":
-                    result = pipe(
-                        request.text,
-                        max_length=request.max_length,
-                        temperature=request.temperature,
-                        top_p=request.top_p,
-                        top_k=request.top_k,
-                        do_sample=request.do_sample,
-                        pad_token_id=tokenizer.eos_token_id
-                    )
-                elif task == "text-classification":
-                    # 텍스트 분류의 경우 안전한 처리
-                    try:
-                        result = pipe(request.text)
-                    except Exception as e:
-                        # 만약 일반적인 방법이 실패하면 return_all_scores=True로 시도
-                        try:
-                            result = pipe(request.text, return_all_scores=True)
-                        except Exception as e2:
-                            # 최종 대안: 직접 모델 추론
-                            inputs = tokenizer(request.text, return_tensors="pt", padding=True, truncation=True)
-                            
-                            # GPU/CPU 디바이스 일치 확인
                             device = next(model.parameters()).device
                             inputs = {k: v.to(device) for k, v in inputs.items()}
-                            
-                            with torch.no_grad():
-                                outputs = model(**inputs)
-                                if hasattr(outputs, 'logits'):
-                                    import torch.nn.functional as F
-                                    probs = F.softmax(outputs.logits, dim=-1)
-                                    predicted_class = torch.argmax(outputs.logits, dim=-1)
-                                    
-                                    # 모델의 label 매핑 가져오기
-                                    if hasattr(model.config, 'id2label'):
-                                        id2label = model.config.id2label
-                                        predicted_label = id2label.get(predicted_class.item(), f"LABEL_{predicted_class.item()}")
-                                    else:
-                                        predicted_label = f"LABEL_{predicted_class.item()}"
-                                    
-                                    result = [{
-                                        "label": predicted_label,
-                                        "score": probs[0][predicted_class.item()].item()
-                                    }]
+                        except StopIteration:
+                            # 모델에 파라미터가 없는 경우 CPU 사용
+                            device = torch.device('cpu')
+                        
+                        with torch.no_grad():
+                            outputs = model(**inputs)
+                            if hasattr(outputs, 'logits'):
+                                import torch.nn.functional as F
+                                probs = F.softmax(outputs.logits, dim=-1)
+                                predicted_class = torch.argmax(outputs.logits, dim=-1)
+                                
+                                # 모델의 label 매핑 가져오기
+                                if hasattr(model.config, 'id2label'):
+                                    id2label = model.config.id2label
+                                    predicted_label = id2label.get(predicted_class.item(), f"LABEL_{predicted_class.item()}")
                                 else:
-                                    raise Exception(f"Model output does not contain logits: {outputs}")
+                                    predicted_label = f"LABEL_{predicted_class.item()}"
+                                
+                                result = [{
+                                    "label": predicted_label,
+                                    "score": probs[0][predicted_class.item()].item()
+                                }]
+                            else:
+                                raise Exception(f"Model output does not contain logits: {outputs}")
+                    except Exception as e:
+                        raise HTTPException(
+                            status_code=500, 
+                            detail=f"Direct model inference failed: {str(e)}"
+                        )
                 else:
-                    result = pipe(request.text)
+                    # 다른 태스크의 경우 파이프라인 사용
+                    cache_key = f"{model_name}_{task}"
+                    if cache_key not in self.pipeline_cache:
+                        # 안전한 파이프라인 생성 - 각 태스크별로 적절한 파라미터 사용
+                        try:
+                            if task == "text-generation":
+                                self.pipeline_cache[cache_key] = pipeline(
+                                    task=task,
+                                    model=model,
+                                    tokenizer=tokenizer,
+                                    return_full_text=False
+                                )
+                            elif task == "feature-extraction":
+                                # 임베딩 모델용 파이프라인
+                                self.pipeline_cache[cache_key] = pipeline(
+                                    task=task,
+                                    model=model,
+                                    tokenizer=tokenizer
+                                )
+                            else:
+                                # 기타 태스크는 기본 파라미터만 사용
+                                self.pipeline_cache[cache_key] = pipeline(
+                                    task=task,
+                                    model=model,
+                                    tokenizer=tokenizer
+                                )
+                        except Exception as e:
+                            # 파이프라인 생성 실패 시 더 단순한 방법 시도
+                            print(f"Pipeline creation failed for {task}: {e}")
+                            try:
+                                # 가장 기본적인 형태로 재시도
+                                self.pipeline_cache[cache_key] = pipeline(
+                                    task,
+                                    model=model,
+                                    tokenizer=tokenizer
+                                )
+                            except Exception as e2:
+                                raise HTTPException(
+                                    status_code=500, 
+                                    detail=f"Failed to create pipeline for {task}: {str(e2)}"
+                                )
+                
+                    pipe = self.pipeline_cache[cache_key]
+                    
+                    # 태스크별 파라미터 설정
+                    if task == "text-generation":
+                        result = pipe(
+                            request.text,
+                            max_length=request.max_length,
+                            temperature=request.temperature,
+                            top_p=request.top_p,
+                            top_k=request.top_k,
+                            do_sample=request.do_sample,
+                            pad_token_id=tokenizer.eos_token_id
+                        )
+                    else:
+                        # 기타 태스크 (feature-extraction 등)
+                        result = pipe(request.text)
+                
                 
                 return {
                     "model_name": model_name,
