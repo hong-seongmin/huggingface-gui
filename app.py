@@ -1581,29 +1581,33 @@ def render_fastapi_server():
         
         if st.button(start_button_text, disabled=start_disabled):
             try:
-                # 멀티 포트 지원 - 모델별 포트 설정 사용
+                # 로드된 모델들의 포트 설정 확인 및 준비
+                loaded_models = st.session_state['model_manager'].get_loaded_models()
                 model_ports = st.session_state.get('model_ports', {})
-                if model_ports:
-                    result = st.session_state['fastapi_server'].start_server(model_ports)
-                    st.session_state['fastapi_server_running'] = True
-                    # Server state changes are not critical to save immediately
-                    st.success(result)
-                    
-                    # 포트 설정 확인 메시지
-                    active_ports = []
-                    for model_name in loaded_models:
-                        port = model_ports.get(model_name, 8000)
-                        active_ports.append(f"{model_name}:{port}")
-                    st.info(f"🚀 모델별 포트 설정: {', '.join(active_ports)}")
-                    st.rerun()  # UI 즉시 업데이트
-                else:
-                    # 기본 단일 포트 모드
-                    result = st.session_state['fastapi_server'].start_server()
-                    st.session_state['fastapi_server_running'] = True
-                    # Server state changes are not critical to save immediately
-                    st.success(result)
-                    st.info("🚀 모든 모델이 기본 포트(8000)에서 실행됩니다.")
-                    st.rerun()  # UI 즉시 업데이트
+                
+                # 모든 로드된 모델에 대해 포트 설정 확인
+                final_model_ports = {}
+                for i, model_name in enumerate(loaded_models):
+                    if model_name in model_ports:
+                        final_model_ports[model_name] = model_ports[model_name]
+                    else:
+                        # 기본 포트 설정 (8000부터 시작)
+                        default_port = 8000 + i
+                        final_model_ports[model_name] = default_port
+                        st.session_state['model_ports'][model_name] = default_port
+                
+                # 멀티 포트 모드로 서버 시작
+                result = st.session_state['fastapi_server'].start_server(final_model_ports)
+                st.session_state['fastapi_server_running'] = True
+                st.success(result)
+                
+                # 포트 설정 확인 메시지
+                active_ports = []
+                for model_name in loaded_models:
+                    port = final_model_ports.get(model_name, 8000)
+                    active_ports.append(f"{model_name}:{port}")
+                st.info(f"🚀 모델별 포트 설정: {', '.join(active_ports)}")
+                st.rerun()  # UI 즉시 업데이트
                     
             except Exception as e:
                 st.error(f"서버 시작 실패: {e}")
@@ -1615,9 +1619,23 @@ def render_fastapi_server():
         if st.button("⏹️ 서버 중지"):
             try:
                 result = st.session_state['fastapi_server'].stop_server()
-                st.session_state['fastapi_server_running'] = False
-                # Server state changes are not critical to save immediately
                 st.info(result)
+                
+                # 서버 중지 후 실제 상태 즉시 확인
+                import time
+                time.sleep(1)  # 중지 처리 완료 대기
+                
+                server_info = st.session_state['fastapi_server'].get_server_info()
+                active_servers = server_info.get('active_servers', [])
+                actual_server_running = len(active_servers) > 0
+                
+                st.session_state['fastapi_server_running'] = actual_server_running
+                
+                if actual_server_running:
+                    st.warning("⚠️ 일부 서버가 여전히 실행 중입니다. 다시 시도하세요.")
+                else:
+                    st.success("✅ 모든 서버가 성공적으로 중지되었습니다.")
+                
                 st.rerun()  # UI 즉시 업데이트
             except Exception as e:
                 st.error(f"서버 중지 실패: {e}")
@@ -2172,8 +2190,8 @@ def main():
         else:
             st.info(f"⚫ 캐시 미스캔 (scanned={cache_scanned}, info={cache_info_exists})")
         
-        # 서버 상태 (스마트 폴링 - 실제 서버 상태 확인)
-        if should_perform_expensive_check('server_status_check', 20):
+        # 서버 상태 (스마트 폴링 - 실제 서버 상태 확인) - 간격 단축
+        if should_perform_expensive_check('server_status_check', 5):
             try:
                 # API 서버 상태 확인 및 동기화 (멀티포트 지원)
                 server_info = st.session_state['fastapi_server'].get_server_info()
