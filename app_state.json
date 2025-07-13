@@ -1,8 +1,8 @@
 {
-  "model_path_input": "BAAI/bge-m3",
+  "model_path_input": "tabularisai/multilingual-sentiment-analysis",
   "current_model_analysis": null,
   "auto_refresh_interval": 3,
-  "selected_cached_model": "BAAI/bge-m3",
+  "selected_cached_model": "tabularisai/multilingual-sentiment-analysis",
   "cache_expanded": false,
   "monitoring_active": true,
   "fastapi_server_running": true,
