@@ -308,6 +308,17 @@ class MultiModelManager:
                         # 방법 1: 환경 변수 최적화 후 transformers 재시도
                         print(f"[DEBUG] 방법 1: 환경 변수 최적화 후 transformers 시도")
                         
+                        # safetensors 파일 존재 여부 사전 체크
+                        safetensors_path = os.path.join(actual_model_path, "model.safetensors")
+                        pytorch_path = os.path.join(actual_model_path, "pytorch_model.bin")
+                        
+                        has_safetensors = os.path.exists(safetensors_path)
+                        has_pytorch = os.path.exists(pytorch_path)
+                        
+                        print(f"[DEBUG] 모델 파일 형식 감지:")
+                        print(f"[DEBUG]   safetensors: {'✅' if has_safetensors else '❌'} {safetensors_path}")
+                        print(f"[DEBUG]   pytorch_model.bin: {'✅' if has_pytorch else '❌'} {pytorch_path}")
+                        
                         # HuggingFace 관련 최적화 환경 변수 설정
                         original_env = {}
                         optimized_env = {
@@ -316,7 +327,8 @@ class MultiModelManager:
                             'HF_HUB_DISABLE_SYMLINKS_WARNING': '1',
                             'TRANSFORMERS_NO_ADVISORY_WARNINGS': '1',
                             'TRANSFORMERS_VERBOSITY': 'error',
-                            'TOKENIZERS_PARALLELISM': 'false'
+                            'TOKENIZERS_PARALLELISM': 'false',
+                            'TRANSFORMERS_FORCE_PYTORCH': '1' if not has_safetensors else '0'  # safetensors 없으면 PyTorch 강제
                         }
                         
                         # 환경 변수 임시 설정
@@ -328,48 +340,96 @@ class MultiModelManager:
                         try:
                             # 최적화된 환경에서 AutoModel 로딩 시도
                             print(f"[DEBUG] 최적화된 환경에서 AutoModel.from_pretrained 시도")
-                            model = AutoModel.from_pretrained(
-                                actual_model_path, 
-                                local_files_only=True,
-                                torch_dtype=torch.float32,
-                                trust_remote_code=True,
-                                use_safetensors=False,  # safetensors 비활성화
-                                low_cpu_mem_usage=True  # 메모리 효율적 로딩
-                            )
+                            
+                            # 파일 형식에 따른 로딩 옵션 결정
+                            loading_options = {
+                                "local_files_only": True,
+                                "torch_dtype": torch.float32,
+                                "trust_remote_code": True,
+                                "low_cpu_mem_usage": True,
+                                "force_download": False
+                            }
+                            
+                            # safetensors 사용 여부 결정
+                            if has_safetensors:
+                                print(f"[DEBUG] safetensors 파일 발견 - 사용 가능")
+                                loading_options["use_safetensors"] = True
+                            elif has_pytorch:
+                                print(f"[DEBUG] pytorch_model.bin만 사용 가능 - safetensors 비활성화")
+                                loading_options["use_safetensors"] = False
+                            else:
+                                print(f"[DEBUG] ⚠️ 지원되는 모델 파일을 찾을 수 없음")
+                                raise FileNotFoundError("모델 가중치 파일을 찾을 수 없습니다")
+                            
+                            print(f"[DEBUG] 로딩 옵션: {loading_options}")
+                            model = AutoModel.from_pretrained(actual_model_path, **loading_options)
                             print(f"[DEBUG] ✅ 방법 1 성공: AutoModel 로딩 완료")
                             loading_result.put(model)
                             return
                             
                         except Exception as method1_error:
                             print(f"[DEBUG] ❌ 방법 1 실패: {method1_error}")
+                            print(f"[DEBUG] 오류 타입: {type(method1_error).__name__}")
                             
-                            # 방법 2: 직접 PyTorch 모델 로딩 시도
-                            print(f"[DEBUG] 방법 2: 직접 PyTorch 가중치 로딩 시도")
+                            # 방법 2: 직접 PyTorch 모델 로딩 시도 (즉시 전환)
+                            print(f"[DEBUG] 방법 2: 직접 PyTorch 가중치 로딩 시도 (폴백)")
                             try:
                                 from transformers import XLMRobertaModel, XLMRobertaConfig
+                                
+                                # 메모리 정리 후 재시도
+                                import gc
+                                gc.collect()
+                                if torch.cuda.is_available():
+                                    torch.cuda.empty_cache()
+                                print(f"[DEBUG] 메모리 정리 완료")
                                 
                                 # Config로부터 빈 모델 생성
                                 print(f"[DEBUG] 빈 모델 구조 생성")
                                 model = XLMRobertaModel(config)
                                 
-                                # PyTorch 가중치 직접 로딩
-                                weight_file = os.path.join(actual_model_path, "pytorch_model.bin")
+                                # 가장 안전한 가중치 파일 선택
+                                if has_pytorch:
+                                    weight_file = pytorch_path
+                                    print(f"[DEBUG] PyTorch 가중치 사용: {weight_file}")
+                                elif has_safetensors:
+                                    weight_file = safetensors_path
+                                    print(f"[DEBUG] Safetensors 가중치 사용: {weight_file}")
+                                else:
+                                    raise FileNotFoundError("사용 가능한 가중치 파일이 없습니다")
+                                
                                 print(f"[DEBUG] 가중치 파일 로딩: {weight_file}")
                                 
-                                state_dict = torch.load(weight_file, map_location='cpu')
-                                print(f"[DEBUG] ✅ 가중치 로딩 완료, 키 개수: {len(state_dict)}")
+                                if weight_file.endswith('.safetensors'):
+                                    # safetensors 로딩
+                                    from safetensors.torch import load_file
+                                    state_dict = load_file(weight_file)
+                                    print(f"[DEBUG] ✅ Safetensors 로딩 완료, 키 개수: {len(state_dict)}")
+                                else:
+                                    # PyTorch 로딩
+                                    state_dict = torch.load(weight_file, map_location='cpu')
+                                    print(f"[DEBUG] ✅ PyTorch 가중치 로딩 완룼, 키 개수: {len(state_dict)}")
                                 
                                 # 모델에 가중치 적용
                                 print(f"[DEBUG] 모델에 가중치 적용")
-                                model.load_state_dict(state_dict, strict=False)
-                                print(f"[DEBUG] ✅ 방법 2 성공: 직접 PyTorch 로딩 완료")
+                                missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+                                
+                                if missing_keys:
+                                    print(f"[DEBUG] ⚠️ 누락된 키: {len(missing_keys)}개")
+                                if unexpected_keys:
+                                    print(f"[DEBUG] ⚠️ 예상치 못한 키: {len(unexpected_keys)}개")
+                                    
+                                print(f"[DEBUG] ✅ 방법 2 성공: 직접 가중치 로딩 완료")
                                 
                                 loading_result.put(model)
                                 return
                                 
                             except Exception as method2_error:
-                                print(f"[DEBUG] ❌ 방법 2 실패: {method2_error}")
-                                raise method1_error  # 원래 오류 반환
+                                print(f"[DEBUG] ❌ 방법 2도 실패: {method2_error}")
+                                print(f"[DEBUG] 오류 타입: {type(method2_error).__name__}")
+                                
+                                # 모든 방법 실패 시 상세 오류 정보 제공
+                                error_summary = f"모든 로딩 방법 실패:\n방법 1: {method1_error}\n방법 2: {method2_error}"
+                                raise Exception(error_summary)
                         
                         finally:
                             # 환경 변수 복원
@@ -389,9 +449,9 @@ class MultiModelManager:
                 loading_thread.daemon = True
                 loading_thread.start()
                 
-                # 진행상황 모니터링 (30초마다 상태 출력)
-                timeout_seconds = 300  # 5분 타임아웃
-                check_interval = 30    # 30초마다 체크
+                # 진행상황 모니터링 (15초마다 상태 출력)
+                timeout_seconds = 600  # 10분 타임아웃 (BGE-M3는 5-6분 소요)
+                check_interval = 15    # 15초마다 체크 (더 세밀한 진행률 표시)
                 elapsed_checks = 0
                 
                 while loading_thread.is_alive():
@@ -415,22 +475,40 @@ class MultiModelManager:
                         except Exception as mem_e:
                             print(f"[DEBUG] 메모리 체크 실패: {mem_e}")
                         
-                        # 타임아웃 체크
+                        # 타임아웃 체크 (성공 신호가 도착하지 않은 경우에만)
                         if elapsed_time >= timeout_seconds:
+                            # 마지막으로 한 번 더 성공 신호 확인
+                            if not loading_result.empty():
+                                print(f"[DEBUG] ✅ 타임아웃 직전 로딩 성공 감지!")
+                                break
+                            
                             print(f"[DEBUG] ❌ 모델 로딩 타임아웃 ({timeout_seconds}초)")
-                            loading_error.put(TimeoutError(f"모델 로딩이 {timeout_seconds}초를 초과했습니다"))
+                            
+                            # 스레드 강제 종료 시도 (배경에서 계속 실행되도록 허용)
+                            loading_error.put(TimeoutError(f"모델 로딩이 {timeout_seconds}초를 초과했습니다. 배경에서 계속 시도 중..."))
                             break
                 
-                # 결과 확인
-                if not loading_error.empty():
-                    error = loading_error.get()
-                    raise error
+                # 결과 확인 (동기화 강화)
+                print(f"[DEBUG] 로딩 스레드 종료 후 결과 확인")
                 
+                # 성공 결과 우선 체크
                 if not loading_result.empty():
                     model = loading_result.get()
-                    print(f"[DEBUG] 4/5: 모델 로딩 완료, 후처리 시작")
+                    print(f"[DEBUG] 4/5: 모델 로딩 성공, 후처리 시작")
+                    
+                    # 오류 큐에 남아있는 메시지 정리 (타임아웃 경고 등)
+                    while not loading_error.empty():
+                        warning_msg = loading_error.get()
+                        print(f"[DEBUG] 무시되는 경고: {warning_msg}")
+                        
+                elif not loading_error.empty():
+                    error = loading_error.get()
+                    print(f"[DEBUG] 모델 로딩 오류 발생: {error}")
+                    raise error
                 else:
-                    raise Exception("모델 로딩이 완료되지 않았습니다")
+                    # 둘 다 비어있는 경우 (비정상 상황)
+                    print(f"[DEBUG] ⚠️ 비정상 상황: 로딩 결과도 오류도 없음")
+                    raise Exception("모델 로딩 상태를 확인할 수 없습니다")
                 
                 model_load_time = time.time() - model_start
                 print(f"[DEBUG] 5/5: 모델 로딩 후처리 완료")
