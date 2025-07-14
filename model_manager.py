@@ -226,37 +226,242 @@ class MultiModelManager:
                     print(f"[DEBUG] Config 로딩 오류, 기본값 사용: {e}")
                 
                 print(f"[DEBUG] 실제 모델 로딩 시작: {model_name}")
-                # BGE-M3는 embedding 모델이므로 AutoModel 사용
-                model = AutoModel.from_pretrained(
-                    actual_model_path, 
-                    local_files_only=True,
-                    torch_dtype=torch.float32,
-                    trust_remote_code=True
-                )
-                print(f"[DEBUG] 실제 모델 로딩 완료: {model_name}")
+                
+                # 모델 파일 존재 여부 확인
+                print(f"[DEBUG] 모델 파일 확인 중: {actual_model_path}")
+                model_files = [
+                    "config.json",
+                    "pytorch_model.bin", 
+                    "model.safetensors",
+                    "tokenizer.json",
+                    "tokenizer_config.json"
+                ]
+                
+                for file in model_files:
+                    file_path = os.path.join(actual_model_path, file)
+                    exists = os.path.exists(file_path)
+                    if exists:
+                        size_mb = os.path.getsize(file_path) / (1024*1024)
+                        print(f"[DEBUG] ✅ {file}: {size_mb:.1f}MB")
+                    else:
+                        print(f"[DEBUG] ❌ {file}: 파일 없음")
+                
+                # 메모리 상태 확인
+                import psutil
+                mem = psutil.virtual_memory()
+                print(f"[DEBUG] 메모리 상태 - 사용률: {mem.percent}%, 사용가능: {mem.available/1024**3:.1f}GB")
+                
+                print(f"[DEBUG] AutoModel.from_pretrained 호출 시작 (큰 모델이므로 시간 소요 예상)")
+                
+                # 환경 변수 상태 확인
+                print(f"[DEBUG] 환경 변수 확인:")
+                env_vars = {
+                    'HF_HUB_OFFLINE': os.getenv('HF_HUB_OFFLINE', 'None'),
+                    'TRANSFORMERS_OFFLINE': os.getenv('TRANSFORMERS_OFFLINE', 'None'),
+                    'HF_HUB_DISABLE_TELEMETRY': os.getenv('HF_HUB_DISABLE_TELEMETRY', 'None'),
+                    'TOKENIZERS_PARALLELISM': os.getenv('TOKENIZERS_PARALLELISM', 'None')
+                }
+                for key, value in env_vars.items():
+                    print(f"[DEBUG]   {key}={value}")
+                
+                model_start = time.time()
+                
+                # AutoModel 로딩을 단계별로 분할하여 진행 상태 추적
+                print(f"[DEBUG] 1/5: transformers AutoModel 임포트 확인")
+                from transformers import AutoModel
+                print(f"[DEBUG] 2/5: AutoConfig 사전 로딩")
+                
+                # Config 먼저 로딩하여 모델 구조 확인
+                try:
+                    from transformers import AutoConfig
+                    print(f"[DEBUG] Config 로딩 시도: {actual_model_path}")
+                    config = AutoConfig.from_pretrained(
+                        actual_model_path,
+                        local_files_only=True,
+                        trust_remote_code=True
+                    )
+                    print(f"[DEBUG] ✅ Config 로딩 성공: {config.__class__.__name__}")
+                    print(f"[DEBUG] 모델 타입: {getattr(config, 'model_type', 'Unknown')}")
+                    print(f"[DEBUG] 어휘 크기: {getattr(config, 'vocab_size', 'Unknown')}")
+                    print(f"[DEBUG] 숨겨진 크기: {getattr(config, 'hidden_size', 'Unknown')}")
+                except Exception as config_e:
+                    print(f"[DEBUG] ⚠️ Config 로딩 실패, 계속 진행: {config_e}")
+                
+                print(f"[DEBUG] 3/5: 실제 모델 가중치 로딩 시작 (가장 시간 소요 단계)")
+                
+                # 로딩 타임아웃 및 진행상황 모니터링을 위한 스레드 생성
+                import threading
+                import queue
+                
+                loading_result = queue.Queue()
+                loading_error = queue.Queue()
+                
+                def load_model_with_progress():
+                    """별도 스레드에서 모델 로딩 수행"""
+                    try:
+                        print(f"[DEBUG] 모델 로딩 스레드 시작")
+                        
+                        # BGE-M3는 embedding 모델이므로 AutoModel 사용
+                        model = AutoModel.from_pretrained(
+                            actual_model_path, 
+                            local_files_only=True,
+                            torch_dtype=torch.float32,
+                            trust_remote_code=True
+                        )
+                        
+                        print(f"[DEBUG] 모델 로딩 스레드 완료")
+                        loading_result.put(model)
+                        
+                    except Exception as e:
+                        print(f"[DEBUG] 모델 로딩 스레드 오류: {e}")
+                        loading_error.put(e)
+                
+                # 로딩 스레드 시작
+                loading_thread = threading.Thread(target=load_model_with_progress)
+                loading_thread.daemon = True
+                loading_thread.start()
+                
+                # 진행상황 모니터링 (30초마다 상태 출력)
+                timeout_seconds = 300  # 5분 타임아웃
+                check_interval = 30    # 30초마다 체크
+                elapsed_checks = 0
+                
+                while loading_thread.is_alive():
+                    loading_thread.join(timeout=check_interval)
+                    
+                    if loading_thread.is_alive():
+                        elapsed_checks += 1
+                        elapsed_time = elapsed_checks * check_interval
+                        
+                        # 메모리 상태 체크
+                        try:
+                            mem = psutil.virtual_memory()
+                            print(f"[DEBUG] 로딩 진행중... {elapsed_time}초 경과")
+                            print(f"[DEBUG] 메모리 상태: {mem.percent}% 사용, {mem.available/1024**3:.1f}GB 사용가능")
+                            
+                            # 프로세스별 메모리 확인
+                            process = psutil.Process()
+                            proc_mem_mb = process.memory_info().rss / 1024 / 1024
+                            print(f"[DEBUG] 현재 프로세스 메모리: {proc_mem_mb:.1f}MB")
+                            
+                        except Exception as mem_e:
+                            print(f"[DEBUG] 메모리 체크 실패: {mem_e}")
+                        
+                        # 타임아웃 체크
+                        if elapsed_time >= timeout_seconds:
+                            print(f"[DEBUG] ❌ 모델 로딩 타임아웃 ({timeout_seconds}초)")
+                            loading_error.put(TimeoutError(f"모델 로딩이 {timeout_seconds}초를 초과했습니다"))
+                            break
+                
+                # 결과 확인
+                if not loading_error.empty():
+                    error = loading_error.get()
+                    raise error
+                
+                if not loading_result.empty():
+                    model = loading_result.get()
+                    print(f"[DEBUG] 4/5: 모델 로딩 완료, 후처리 시작")
+                else:
+                    raise Exception("모델 로딩이 완료되지 않았습니다")
+                
+                model_load_time = time.time() - model_start
+                print(f"[DEBUG] 5/5: 모델 로딩 후처리 완료")
+                print(f"[DEBUG] ✅ 실제 모델 로딩 완료: {model_name} ({model_load_time:.1f}초)")
+                
+                # 모델 상태 검증
+                print(f"[DEBUG] 모델 상태 검증:")
+                print(f"[DEBUG]   모델 클래스: {model.__class__.__name__}")
+                print(f"[DEBUG]   모델 상태: {'eval' if not model.training else 'train'}")
+                print(f"[DEBUG]   모델 샀고 모드: {next(model.parameters()).requires_grad}")
+                
+                # 모델 메모리 사용량 확인
+                param_count = sum(p.numel() for p in model.parameters())
+                param_size_mb = param_count * 4 / 1024 / 1024  # float32 = 4bytes
+                print(f"[DEBUG] 모델 파라미터: {param_count:,}개 ({param_size_mb:.1f}MB)")
+                
+                # 모델 레이어 구조 간략 분석
+                layer_count = 0
+                for name, module in model.named_modules():
+                    layer_count += 1
+                    if layer_count <= 5:  # 처음 5개 레이어만 상세 정보
+                        print(f"[DEBUG]   레이어 {layer_count}: {name} ({module.__class__.__name__})")
+                print(f"[DEBUG] 총 레이어 수: {layer_count}")
                 
                 print(f"[DEBUG] 토크나이저 로딩 시작: {model_name}")
+                tokenizer_start = time.time()
+                
                 tokenizer = AutoTokenizer.from_pretrained(
                     actual_model_path, 
                     local_files_only=True,
                     trust_remote_code=True
                 )
-                print(f"[DEBUG] 토크나이저 로딩 완료: {model_name}")
+                
+                tokenizer_load_time = time.time() - tokenizer_start
+                print(f"[DEBUG] ✅ 토크나이저 로딩 완료: {model_name} ({tokenizer_load_time:.1f}초)")
+                
+                # 토크나이저 정보 확인
+                vocab_size = tokenizer.vocab_size if hasattr(tokenizer, 'vocab_size') else 'Unknown'
+                print(f"[DEBUG] 토크나이저 어휘 크기: {vocab_size}")
                 
                 # 통합 디바이스 관리자로 일관성 보장
                 print(f"[DEBUG] 디바이스 일관성 보장 시작: {model_name}")
+                device_start = time.time()
+                
                 model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
                 model.eval()
-                print(f"[DEBUG] 디바이스 일관성 보장 완료: {model_name}")
+                
+                device_time = time.time() - device_start
+                print(f"[DEBUG] ✅ 디바이스 일관성 보장 완료: {model_name} ({device_time:.1f}초)")
+                
+                # 최종 모델 상태 확인
+                model_device = next(model.parameters()).device
+                print(f"[DEBUG] 최종 모델 디바이스: {model_device}")
+                print(f"[DEBUG] 모델 평가 모드: {not model.training}")
+                
+                # 디바이스 일관성 최종 검증
+                devices = set(param.device for param in model.parameters())
+                if len(devices) == 1:
+                    print(f"[DEBUG] ✅ 디바이스 일관성 확인: {list(devices)[0]}")
+                else:
+                    print(f"[DEBUG] ⚠️ 디바이스 불일치 감지: {devices}")
                 
                 load_time = time.time() - load_start
                 print(f"[DEBUG] 실제 모델 로딩 총 시간: {load_time:.1f}초")
                 
+                # 로딩 성공 메시지
+                print(f"[DEBUG] 🎉 BGE-M3 모델 로딩 성공적으로 완료!")
+                
                 profiler.print_detailed_report()
                 return model, tokenizer, load_time
                 
+            except TimeoutError as te:
+                print(f"[DEBUG] ⏰ 모델 로딩 타임아웃: {te}")
+                print(f"[DEBUG] 해결방안:")
+                print(f"[DEBUG]   1. 더 큰 타임아웃 설정")
+                print(f"[DEBUG]   2. 더 작은 모델 사용 고려")
+                print(f"[DEBUG]   3. GPU 메모리 최적화")
+                raise
             except Exception as e:
-                print(f"[DEBUG] 실제 모델 로딩 실패: {e}")
+                import traceback
+                print(f"[DEBUG] ❌ 실제 모델 로딩 실패: {e}")
+                print(f"[DEBUG] 오류 타입: {type(e).__name__}")
+                print(f"[DEBUG] 상세 오류:")
+                traceback.print_exc()
+                
+                # 메모리 상태 재확인
+                try:
+                    mem = psutil.virtual_memory()
+                    print(f"[DEBUG] 오류 시점 메모리 - 사용률: {mem.percent}%, 사용가능: {mem.available/1024**3:.1f}GB")
+                except:
+                    pass
+                
+                # 디버깅 정보 추가
+                print(f"[DEBUG] 디버깅 정보:")
+                print(f"[DEBUG]   모델 경로: {actual_model_path}")
+                print(f"[DEBUG]   로컬 파일 전용: True")
+                print(f"[DEBUG]   신뢰 코드: True")
+                print(f"[DEBUG]   형변환: torch.float32")
+                    
                 raise
         
         try:
