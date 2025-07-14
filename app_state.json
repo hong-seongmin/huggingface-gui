@@ -5,7 +5,7 @@
   "selected_cached_model": "BAAI/bge-m3",
   "cache_expanded": false,
   "monitoring_active": true,
-  "fastapi_server_running": true,
+  "fastapi_server_running": false,
   "cache_scanned": true,
   "cache_info_saved": true,
   "revisions_count": 3

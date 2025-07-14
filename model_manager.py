@@ -198,13 +198,11 @@ class MultiModelManager:
         start_time = time.time()
         
         def load_model_ultra_fast(actual_model_path, device):
-            """Ultra-Fast 모델 로딩 - 상세한 병목 분석 포함"""
-            print(f"[ULTRA-FAST] 혁신적인 모델 로딩 시작")
+            """Fast 모델 로딩"""
+            print(f"[FAST] 모델 로딩 시작")
             
-            # 상세한 프로파일링 시작 (프로파일러 내부에서 활성화 여부 확인)
-            profiler.start_profiling("Ultra-Fast 모델 로딩")
-            profiler.profile_transformers_loading()
-            profiler.profile_safetensors_loading()
+            # 프로파일링 시작 (프로파일러 내부에서 활성화 여부 확인)
+            profiler.start_profiling("모델 로딩")
             profiler.memory_snapshot("초기 상태")
             
             # 0단계: Lightning 로딩 시도 (초고속)
@@ -461,17 +459,17 @@ class MultiModelManager:
                 print(f"[DEBUG] 캐시에서 모델 로드 완료 (즉시)")
             else:
                 # 캐시 미스 - Ultra-Fast 로딩 시작
-                print(f"[DEBUG] 캐시 미스 - Ultra-Fast 로딩 시작")
+                print(f"[DEBUG] 캐시 미스 - 모델 로딩 시작")
                 
                 try:
-                    # 혁신적인 Ultra-Fast 로딩
+                    # 모델 로딩
                     result = load_model_ultra_fast(actual_model_path, device)
                     
                     if len(result) == 3:
                         model, tokenizer, load_time = result
-                        print(f"[DEBUG] Ultra-Fast 로딩 성공: {load_time:.1f}초")
+                        print(f"[DEBUG] 모델 로딩 성공: {load_time:.1f}초")
                     else:
-                        raise ValueError("Ultra-Fast 로딩 결과 형식 오류")
+                        raise ValueError("모델 로딩 결과 형식 오류")
                     
                     # 캐시에 저장
                     cache_config = {
@@ -483,7 +481,7 @@ class MultiModelManager:
                     model_cache.cache_model(cache_key_hash, model, tokenizer, actual_model_path, cache_config)
                     
                 except Exception as e:
-                    print(f"[DEBUG] Ultra-Fast 로딩 실패: {e}")
+                    print(f"[DEBUG] 모델 로딩 실패: {e}")
                     raise
             
             # 메모리 사용량 계산

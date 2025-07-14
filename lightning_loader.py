@@ -107,7 +107,7 @@ class LightningModelLoader:
         """극한 최적화된 Pickle 로딩"""
         try:
             start_time = time.time()
-            self.logger.info("[LIGHTNING] ULTRA 극한 최적화 로딩 시도...")
+            self.logger.info("[LIGHTNING] 고속 로딩 시도...")
             
             # 간단한 동기 방식으로 설정 로딩 (aiofiles 의존성 제거)
             import json
@@ -128,12 +128,12 @@ class LightningModelLoader:
             self._ultra_fast_tensor_loading(model, safetensors_path, device)
             
             load_time = time.time() - start_time
-            self.logger.info(f"[LIGHTNING] ULTRA 극한 최적화 성공: {load_time:.2f}초")
+            self.logger.info(f"[LIGHTNING] 고속 로딩 성공: {load_time:.2f}초")
             
             return model, tokenizer, load_time
             
         except Exception as e:
-            self.logger.warning(f"[LIGHTNING] ULTRA 극한 최적화 실패: {e}")
+            self.logger.warning(f"[LIGHTNING] 고속 로딩 실패: {e}")
             return None
     
     def _create_minimal_model(self, config: dict, device: str) -> Any:

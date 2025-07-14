@@ -121,84 +121,21 @@ class DetailedProfiler:
     
     def profile_transformers_loading(self):
         """transformers 로딩 과정을 상세히 프로파일링"""
-        
-        # transformers 내부 함수들을 패치하여 로깅 추가
-        try:
-            import transformers
+        if not self.enabled:
+            return
             
-            # 원본 함수들 저장
-            original_from_pretrained = transformers.PreTrainedModel.from_pretrained
-            original_load_state_dict = transformers.modeling_utils.load_state_dict
-            
-            def profiled_from_pretrained(cls, *args, **kwargs):
-                self.checkpoint("🤖 transformers.from_pretrained 시작")
-                self.memory_snapshot("from_pretrained 시작")
-                
-                try:
-                    result = original_from_pretrained(*args, **kwargs)
-                    self.checkpoint("✅ transformers.from_pretrained 완료")
-                    self.memory_snapshot("from_pretrained 완료")
-                    return result
-                except Exception as e:
-                    self.checkpoint(f"❌ transformers.from_pretrained 실패: {e}")
-                    raise
-            
-            def profiled_load_state_dict(checkpoint_file, *args, **kwargs):
-                if isinstance(checkpoint_file, str):
-                    file_size = os.path.getsize(checkpoint_file) / (1024 * 1024) if os.path.exists(checkpoint_file) else 0
-                    self.io_operation("가중치 파일 로딩", checkpoint_file, file_size)
-                
-                self.checkpoint("📥 load_state_dict 시작")
-                start_time = time.time()
-                
-                try:
-                    result = original_load_state_dict(checkpoint_file, *args, **kwargs)
-                    load_time = time.time() - start_time
-                    self.checkpoint(f"✅ load_state_dict 완료 ({load_time:.1f}초)")
-                    return result
-                except Exception as e:
-                    self.checkpoint(f"❌ load_state_dict 실패: {e}")
-                    raise
-            
-            # 패치 적용
-            transformers.PreTrainedModel.from_pretrained = classmethod(profiled_from_pretrained)
-            transformers.modeling_utils.load_state_dict = profiled_load_state_dict
-            
-            self.logger.info("🔧 transformers 프로파일링 패치 적용 완료")
-            
-        except Exception as e:
-            self.logger.warning(f"transformers 패치 실패: {e}")
+        # 성능상 이유로 패치 기능 비활성화 - 3분 지연 방지
+        self.logger.info("transformers 프로파일링 패치 스킵 (성능 최적화)")
+        return
     
     def profile_safetensors_loading(self):
         """safetensors 로딩 프로파일링"""
-        try:
-            from safetensors import safe_open
+        if not self.enabled:
+            return
             
-            original_safe_open = safe_open
-            
-            def profiled_safe_open(filename, *args, **kwargs):
-                file_size = os.path.getsize(filename) / (1024 * 1024) if os.path.exists(filename) else 0
-                self.io_operation("safetensors 파일 열기", filename, file_size)
-                self.checkpoint("🔐 safetensors 파일 열기 시작")
-                
-                start_time = time.time()
-                try:
-                    result = original_safe_open(filename, *args, **kwargs)
-                    load_time = time.time() - start_time
-                    self.checkpoint(f"✅ safetensors 파일 열기 완료 ({load_time:.1f}초)")
-                    return result
-                except Exception as e:
-                    self.checkpoint(f"❌ safetensors 파일 열기 실패: {e}")
-                    raise
-            
-            # 패치 적용 (모듈 레벨에서)
-            import safetensors
-            safetensors.safe_open = profiled_safe_open
-            
-            self.logger.info("🔧 safetensors 프로파일링 패치 적용 완료")
-            
-        except Exception as e:
-            self.logger.warning(f"safetensors 패치 실패: {e}")
+        # 성능상 이유로 패치 기능 비활성화 - 지연 방지
+        self.logger.info("safetensors 프로파일링 패치 스킵 (성능 최적화)")
+        return
     
     def analyze_bottlenecks(self) -> Dict[str, Any]:
         """병목 지점 분석"""

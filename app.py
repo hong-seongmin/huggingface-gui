@@ -2435,7 +2435,7 @@ def main():
         with col2:
             if st.button("💾 상태 강제 저장"):
                 logger.info("수동 상태 저장 요청")
-                save_app_state()
+                save_app_state(force=True)  # 강제 저장
                 st.success("상태 저장 완료")
         
         with col3:
