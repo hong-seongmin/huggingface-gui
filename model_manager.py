@@ -301,19 +301,85 @@ class MultiModelManager:
                     try:
                         print(f"[DEBUG] 모델 로딩 스레드 시작")
                         
-                        # BGE-M3는 embedding 모델이므로 AutoModel 사용
-                        model = AutoModel.from_pretrained(
-                            actual_model_path, 
-                            local_files_only=True,
-                            torch_dtype=torch.float32,
-                            trust_remote_code=True
-                        )
+                        # 방법 1: 환경 변수 최적화 후 transformers 재시도
+                        print(f"[DEBUG] 방법 1: 환경 변수 최적화 후 transformers 시도")
                         
-                        print(f"[DEBUG] 모델 로딩 스레드 완료")
-                        loading_result.put(model)
+                        # HuggingFace 관련 최적화 환경 변수 설정
+                        import os
+                        original_env = {}
+                        optimized_env = {
+                            'HF_HUB_DISABLE_TELEMETRY': '1',
+                            'HF_HUB_DISABLE_PROGRESS_BARS': '1', 
+                            'HF_HUB_DISABLE_SYMLINKS_WARNING': '1',
+                            'TRANSFORMERS_NO_ADVISORY_WARNINGS': '1',
+                            'TRANSFORMERS_VERBOSITY': 'error',
+                            'TOKENIZERS_PARALLELISM': 'false'
+                        }
+                        
+                        # 환경 변수 임시 설정
+                        for key, value in optimized_env.items():
+                            original_env[key] = os.getenv(key)
+                            os.environ[key] = value
+                            print(f"[DEBUG]   {key}={value}")
+                        
+                        try:
+                            # 최적화된 환경에서 AutoModel 로딩 시도
+                            print(f"[DEBUG] 최적화된 환경에서 AutoModel.from_pretrained 시도")
+                            model = AutoModel.from_pretrained(
+                                actual_model_path, 
+                                local_files_only=True,
+                                torch_dtype=torch.float32,
+                                trust_remote_code=True,
+                                use_safetensors=False,  # safetensors 비활성화
+                                low_cpu_mem_usage=True  # 메모리 효율적 로딩
+                            )
+                            print(f"[DEBUG] ✅ 방법 1 성공: AutoModel 로딩 완료")
+                            loading_result.put(model)
+                            return
+                            
+                        except Exception as method1_error:
+                            print(f"[DEBUG] ❌ 방법 1 실패: {method1_error}")
+                            
+                            # 방법 2: 직접 PyTorch 모델 로딩 시도
+                            print(f"[DEBUG] 방법 2: 직접 PyTorch 가중치 로딩 시도")
+                            try:
+                                import torch
+                                from transformers import XLMRobertaModel, XLMRobertaConfig
+                                
+                                # Config로부터 빈 모델 생성
+                                print(f"[DEBUG] 빈 모델 구조 생성")
+                                model = XLMRobertaModel(config)
+                                
+                                # PyTorch 가중치 직접 로딩
+                                weight_file = os.path.join(actual_model_path, "pytorch_model.bin")
+                                print(f"[DEBUG] 가중치 파일 로딩: {weight_file}")
+                                
+                                state_dict = torch.load(weight_file, map_location='cpu')
+                                print(f"[DEBUG] ✅ 가중치 로딩 완료, 키 개수: {len(state_dict)}")
+                                
+                                # 모델에 가중치 적용
+                                print(f"[DEBUG] 모델에 가중치 적용")
+                                model.load_state_dict(state_dict, strict=False)
+                                print(f"[DEBUG] ✅ 방법 2 성공: 직접 PyTorch 로딩 완료")
+                                
+                                loading_result.put(model)
+                                return
+                                
+                            except Exception as method2_error:
+                                print(f"[DEBUG] ❌ 방법 2 실패: {method2_error}")
+                                raise method1_error  # 원래 오류 반환
+                        
+                        finally:
+                            # 환경 변수 복원
+                            for key, original_value in original_env.items():
+                                if original_value is None:
+                                    if key in os.environ:
+                                        del os.environ[key]
+                                else:
+                                    os.environ[key] = original_value
                         
                     except Exception as e:
-                        print(f"[DEBUG] 모델 로딩 스레드 오류: {e}")
+                        print(f"[DEBUG] 모든 로딩 방법 실패: {e}")
                         loading_error.put(e)
                 
                 # 로딩 스레드 시작
