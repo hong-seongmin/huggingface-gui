@@ -10,11 +10,6 @@ from datetime import datetime
 from model_analyzer import ComprehensiveModelAnalyzer
 from model_optimization import optimizer
 from model_cache import model_cache
-from fast_tensor_loader import fast_loader
-from parallel_model_loader import parallel_loader
-from cpu_optimizer import cpu_optimizer
-from extreme_optimizer import extreme_optimizer
-from lightning_loader import lightning_loader
 from device_manager import device_manager
 from detailed_profiler import profiler
 from huggingface_hub import hf_hub_download, snapshot_download, HfApi
@@ -197,7 +192,7 @@ class MultiModelManager:
         
         start_time = time.time()
         
-        def load_model_ultra_fast(actual_model_path, device):
+        def load_model_with_transformers(actual_model_path, device):
             """Fast 모델 로딩"""
             print(f"[FAST] 모델 로딩 시작")
             
@@ -205,171 +200,64 @@ class MultiModelManager:
             profiler.start_profiling("모델 로딩")
             profiler.memory_snapshot("초기 상태")
             
-            # Lightning 로더는 데모 모델을 생성하므로 실제 BGE-M3 사용을 위해 스킵
-            print("[DEBUG] Lightning 로더 스킵 - 실제 모델 로딩으로 진행")
+            # 직접 transformers 라이브러리 사용으로 실제 BGE-M3 모델 로딩
+            print("[DEBUG] 실제 transformers 모델 로딩 시작")
             
-            # 1단계: 병렬 로딩 시도 (가장 빠름)
-            try:
-                profiler.checkpoint("1단계: 병렬 로딩 시도")
-                profiler.memory_snapshot("병렬 로딩 시작")
-                
-                model, tokenizer, load_time = parallel_loader.load_model_and_tokenizer_parallel(
-                    actual_model_path, device
-                )
-                
-                if model and tokenizer:
-                    profiler.checkpoint(f"병렬 로딩 성공: {load_time:.1f}초")
-                    profiler.memory_snapshot("병렬 로딩 완료")
-                    
-                    # 통합 디바이스 관리자로 일관성 보장
-                    model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
-                    profiler.checkpoint("디바이스 일관성 보장 완료")
-                    
-                    # CPU 최적화 적용
-                    profiler.checkpoint("CPU 최적화 시작")
-                    model = cpu_optimizer.optimize_model_for_cpu(model, optimize_level=3)
-                    profiler.checkpoint("CPU 최적화 완료")
-                    profiler.memory_snapshot("최적화 완료")
-                    
-                    # 분석 리포트 출력
-                    profiler.print_detailed_report()
-                    return model, tokenizer, load_time
-                else:
-                    profiler.checkpoint("병렬 로딩 실패, 2단계로 전환")
-                    
-            except Exception as e:
-                profiler.checkpoint(f"병렬 로딩 오류: {e}")
+            import time
+            load_start = time.time()
             
-            # 2단계: 직접 텐서 로딩 시도 (매우 빠름)
             try:
-                profiler.checkpoint("2단계: 직접 텐서 로딩 시도")
-                profiler.memory_snapshot("직접 로딩 시작")
+                from transformers import AutoModel, AutoTokenizer, AutoConfig
                 
-                # 모델 직접 로딩
-                model, model_time = fast_loader.load_model_ultra_fast(actual_model_path, device)
+                print(f"[DEBUG] Config 로딩 시작: {model_name}")
                 
-                if model:
-                    profiler.checkpoint(f"직접 텐서 로딩 성공: {model_time:.1f}초")
-                    profiler.memory_snapshot("모델 로딩 완료")
-                    
-                    # 토크나이저 로딩
-                    tokenizer, tokenizer_time = fast_loader.load_tokenizer_fast(actual_model_path)
-                    
-                    total_time = model_time + tokenizer_time
-                    profiler.checkpoint(f"전체 로딩 시간: {total_time:.1f}초")
-                    profiler.memory_snapshot("토크나이저 완료")
-                    
-                    # 통합 디바이스 관리자로 일관성 보장
-                    model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
-                    profiler.checkpoint("디바이스 일관성 보장 완료")
-                    
-                    # CPU 최적화 적용
-                    profiler.checkpoint("CPU 최적화 시작")
-                    model = cpu_optimizer.optimize_model_for_cpu(model, optimize_level=2)
-                    profiler.checkpoint("CPU 최적화 완료")
-                    profiler.memory_snapshot("최적화 완료")
-                    
-                    # 분석 리포트 출력
-                    profiler.print_detailed_report()
-                    return model, tokenizer, total_time
-                else:
-                    profiler.checkpoint("직접 텐서 로딩 실패, 3단계로 전환")
-                    
-            except Exception as e:
-                profiler.checkpoint(f"직접 텐서 로딩 오류: {e}")
-            
-            # 3단계: EXTREME 최적화 로딩 (최후의 무기)
-            try:
-                profiler.checkpoint("3단계: EXTREME 최적화 로딩")
-                profiler.memory_snapshot("EXTREME 시작")
-                
-                # EXTREME 최적화 적용
-                model, tokenizer, load_time = extreme_optimizer.ultra_fast_model_loading(
-                    actual_model_path, device
-                )
-                
-                if model and tokenizer:
-                    profiler.checkpoint(f"EXTREME 로딩 성공: {load_time:.1f}초")
-                    profiler.memory_snapshot("EXTREME 완료")
-                    
-                    # 통합 디바이스 관리자로 일관성 보장
-                    model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
-                    profiler.checkpoint("디바이스 일관성 보장 완료")
-                    
-                    # CPU 최적화 적용
-                    profiler.checkpoint("CPU 최적화 시작")
-                    model = cpu_optimizer.optimize_model_for_cpu(model, optimize_level=1)
-                    profiler.checkpoint("CPU 최적화 완료")
-                    profiler.memory_snapshot("최적화 완료")
-                    
-                    # 분석 리포트 출력
-                    profiler.print_detailed_report()
-                    return model, tokenizer, load_time
-                else:
-                    profiler.checkpoint("EXTREME 로딩 실패, 최후 폴백")
-                    raise ValueError("EXTREME 로딩 실패")
-                
-            except Exception as e:
-                profiler.checkpoint(f"EXTREME 로딩도 실패: {e}")
-                
-                # 최후 폴백: 기본 로딩
-                profiler.checkpoint("최후 폴백: 기본 로딩")
-                profiler.memory_snapshot("폴백 시작")
-                
-                import time
-                fallback_start = time.time()
-                
+                # 빠른 로컬 config 확인
                 try:
-                    from transformers import AutoModel, AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
-                    
-                    profiler.checkpoint("Config 로딩 시작")
-                    config = AutoConfig.from_pretrained(actual_model_path, local_files_only=True)
-                    profiler.checkpoint("Config 로딩 완료")
-                    
-                    is_classification = (
-                        hasattr(config, 'architectures') and 
-                        config.architectures and
-                        any('Classification' in arch for arch in config.architectures)
-                    )
-                    
-                    profiler.checkpoint("모델 로딩 시작 (폴백)")
-                    profiler.memory_snapshot("모델 로딩 전")
-                    
-                    if is_classification:
-                        model = AutoModelForSequenceClassification.from_pretrained(
-                            actual_model_path, local_files_only=True
-                        )
+                    import json
+                    config_path = os.path.join(actual_model_path, "config.json")
+                    if os.path.exists(config_path):
+                        with open(config_path, 'r') as f:
+                            config_dict = json.load(f)
+                        print(f"[DEBUG] 로컬 config 로딩 완료: {model_name}")
                     else:
-                        model = AutoModel.from_pretrained(
-                            actual_model_path, local_files_only=True
-                        )
-                    
-                    profiler.checkpoint("모델 로딩 완료 (폴백)")
-                    profiler.memory_snapshot("모델 로딩 후")
-                    
-                    profiler.checkpoint("토크나이저 로딩 시작 (폴백)")
-                    tokenizer = AutoTokenizer.from_pretrained(
-                        actual_model_path, local_files_only=True
-                    )
-                    profiler.checkpoint("토크나이저 로딩 완료 (폴백)")
-                    
-                    # 통합 디바이스 관리자로 일관성 보장
-                    model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
-                    model.eval()
-                    profiler.checkpoint("모델 최종 설정 완료 (통합 디바이스 관리)")
-                    profiler.memory_snapshot("폴백 완료")
-                    
-                    load_time = time.time() - fallback_start
-                    profiler.checkpoint(f"최후 폴백 완료: {load_time:.1f}초")
-                    
-                    # 분석 리포트 출력
-                    profiler.print_detailed_report()
-                    return model, tokenizer, load_time
-                    
-                except Exception as final_e:
-                    profiler.checkpoint(f"모든 로딩 방법 실패: {final_e}")
-                    profiler.print_detailed_report()
-                    raise
+                        config = AutoConfig.from_pretrained(actual_model_path, local_files_only=True)
+                        print(f"[DEBUG] AutoConfig 로딩 완료: {model_name}")
+                except Exception as e:
+                    print(f"[DEBUG] Config 로딩 오류, 기본값 사용: {e}")
+                
+                print(f"[DEBUG] 실제 모델 로딩 시작: {model_name}")
+                # BGE-M3는 embedding 모델이므로 AutoModel 사용
+                model = AutoModel.from_pretrained(
+                    actual_model_path, 
+                    local_files_only=True,
+                    torch_dtype=torch.float32,
+                    trust_remote_code=True
+                )
+                print(f"[DEBUG] 실제 모델 로딩 완료: {model_name}")
+                
+                print(f"[DEBUG] 토크나이저 로딩 시작: {model_name}")
+                tokenizer = AutoTokenizer.from_pretrained(
+                    actual_model_path, 
+                    local_files_only=True,
+                    trust_remote_code=True
+                )
+                print(f"[DEBUG] 토크나이저 로딩 완료: {model_name}")
+                
+                # 통합 디바이스 관리자로 일관성 보장
+                print(f"[DEBUG] 디바이스 일관성 보장 시작: {model_name}")
+                model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
+                model.eval()
+                print(f"[DEBUG] 디바이스 일관성 보장 완료: {model_name}")
+                
+                load_time = time.time() - load_start
+                print(f"[DEBUG] 실제 모델 로딩 총 시간: {load_time:.1f}초")
+                
+                profiler.print_detailed_report()
+                return model, tokenizer, load_time
+                
+            except Exception as e:
+                print(f"[DEBUG] 실제 모델 로딩 실패: {e}")
+                raise
         
         try:
             print(f"[DEBUG] _load_model_sync 시작: {model_name}, {model_path}")
@@ -426,82 +314,28 @@ class MultiModelManager:
             print(f"[DEBUG] 사용 가능한 메모리: {available_memory_gb:.1f}GB")
             print(f"[DEBUG] 디바이스 설정: {device} (Streamlit 안정성을 위해 CPU 강제)")
             
-            # accelerate 사용 가능 여부 확인 (단순화)
-            print(f"[DEBUG] accelerate 확인 시작: {model_name}")
-            try:
-                import accelerate
-                use_device_map = device == "cuda"
-            except ImportError:
-                use_device_map = False
-            print(f"[DEBUG] accelerate 확인 완료: {model_name}")
-            
-            # 설정에서 architecture 확인 - 최적화된 방식
-            print(f"[DEBUG] 설정 로딩 시작: {model_name}")
-            try:
-                # 빠른 로컬 파일 읽기로 대체
-                import json
-                import os
-                config_path = os.path.join(actual_model_path, "config.json")
-                if os.path.exists(config_path):
-                    with open(config_path, 'r') as f:
-                        config_dict = json.load(f)
-                    architectures = config_dict.get('architectures', [])
-                    is_classification_model = any('Classification' in arch for arch in architectures if arch)
-                    print(f"[DEBUG] 빠른 설정 로딩 완료: {model_name}")
-                else:
-                    # 폴백: AutoConfig 사용
-                    config = AutoConfig.from_pretrained(actual_model_path)
-                    is_classification_model = (
-                        hasattr(config, 'architectures') and 
-                        config.architectures and
-                        any('Classification' in arch for arch in config.architectures)
-                    )
-                    print(f"[DEBUG] 폴백 설정 로딩 완료: {model_name}")
-            except Exception as e:
-                print(f"[DEBUG] 설정 로딩 실패, 기본값 사용: {e}")
-                is_classification_model = False
+            # BGE-M3는 임베딩 모델이므로 분류 모델이 아님
+            is_classification_model = False
+            print(f"[DEBUG] BGE-M3 임베딩 모델로 설정")
             
             print(f"[DEBUG] 모델 로딩 시작: classification={is_classification_model}")
             
-            # 캐시 키 생성
-            print(f"[DEBUG] 캐시 키 생성 시작: {model_name}")
-            cache_key = f"{model_name}_{actual_model_path}_{device}_{is_classification_model}"
-            cache_key_hash = hashlib.md5(cache_key.encode()).hexdigest()
-            print(f"[DEBUG] 캐시 키 생성 완료: {model_name}")
+            # 직접 모델 로딩 (캐시 우회하여 안정성 확보)
+            print(f"[DEBUG] 직접 모델 로딩 시작: {model_name}")
             
-            # 캐시에서 모델 확인
-            print(f"[DEBUG] 캐시 확인 시작: {model_name}")
-            cached_result = model_cache.get_cached_model(cache_key_hash)
-            print(f"[DEBUG] 캐시 확인 완료: {model_name}")
-            if cached_result:
-                model, tokenizer = cached_result
-                print(f"[DEBUG] 캐시에서 모델 로드 완료 (즉시)")
-            else:
-                # 캐시 미스 - 모델 로딩 시작
-                print(f"[DEBUG] 캐시 미스 - 모델 로딩 시작")
+            try:
+                # 모델 로딩
+                result = load_model_with_transformers(actual_model_path, device)
                 
-                try:
-                    # 모델 로딩
-                    result = load_model_ultra_fast(actual_model_path, device)
-                    
-                    if len(result) == 3:
-                        model, tokenizer, load_time = result
-                        print(f"[DEBUG] 모델 로딩 성공: {load_time:.1f}초")
-                    else:
-                        raise ValueError("모델 로딩 결과 형식 오류")
-                    
-                    # 캐시에 저장
-                    cache_config = {
-                        'device': device,
-                        'load_time': load_time,
-                        'model_path': actual_model_path,
-                        'ultra_fast': True
-                    }
-                    model_cache.cache_model(cache_key_hash, model, tokenizer, actual_model_path, cache_config)
-                    
-                except Exception as e:
-                    print(f"[DEBUG] 모델 로딩 실패: {e}")
-                    raise
+                if len(result) == 3:
+                    model, tokenizer, load_time = result
+                    print(f"[DEBUG] 모델 로딩 성공: {load_time:.1f}초")
+                else:
+                    raise ValueError("모델 로딩 결과 형식 오류")
+                
+            except Exception as e:
+                print(f"[DEBUG] 모델 로딩 실패: {e}")
+                raise
             
             # 메모리 사용량 계산
             mem_after = process.memory_info().rss
