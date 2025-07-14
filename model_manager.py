@@ -301,11 +301,14 @@ class MultiModelManager:
                     try:
                         print(f"[DEBUG] 모델 로딩 스레드 시작")
                         
+                        # 필요한 모듈들 임포트
+                        import os
+                        import torch
+                        
                         # 방법 1: 환경 변수 최적화 후 transformers 재시도
                         print(f"[DEBUG] 방법 1: 환경 변수 최적화 후 transformers 시도")
                         
                         # HuggingFace 관련 최적화 환경 변수 설정
-                        import os
                         original_env = {}
                         optimized_env = {
                             'HF_HUB_DISABLE_TELEMETRY': '1',
@@ -343,7 +346,6 @@ class MultiModelManager:
                             # 방법 2: 직접 PyTorch 모델 로딩 시도
                             print(f"[DEBUG] 방법 2: 직접 PyTorch 가중치 로딩 시도")
                             try:
-                                import torch
                                 from transformers import XLMRobertaModel, XLMRobertaConfig
                                 
                                 # Config로부터 빈 모델 생성
