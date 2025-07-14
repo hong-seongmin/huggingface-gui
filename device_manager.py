@@ -15,26 +15,9 @@ class UniversalDeviceManager:
         
     def _detect_optimal_device(self) -> torch.device:
         """최적 디바이스 자동 감지"""
-        if torch.cuda.is_available():
-            try:
-                # GPU 메모리 확인
-                gpu_memory = torch.cuda.get_device_properties(0).total_memory
-                allocated_memory = torch.cuda.memory_allocated(0)
-                free_memory = gpu_memory - allocated_memory
-                
-                # 최소 1GB 여유 메모리가 있으면 GPU 사용
-                if free_memory > 1024**3:  # 1GB
-                    self.logger.info(f"GPU 사용: {free_memory / 1024**3:.1f}GB 여유 메모리")
-                    return torch.device('cuda:0')
-                else:
-                    self.logger.warning(f"GPU 메모리 부족: {free_memory / 1024**3:.1f}GB, CPU 사용")
-                    return torch.device('cpu')
-            except Exception as e:
-                self.logger.error(f"GPU 확인 실패: {e}, CPU 사용")
-                return torch.device('cpu')
-        else:
-            self.logger.info("CUDA 미사용 가능, CPU 사용")
-            return torch.device('cpu')
+        # Streamlit 환경에서는 안정성을 위해 CPU 강제 사용
+        self.logger.info("안정성을 위해 CPU 디바이스 강제 사용")
+        return torch.device('cpu')
     
     def ensure_device_consistency(self, model: Any, tokenizer: Any = None) -> Tuple[Any, Any]:
         """모델과 토크나이저의 디바이스 일관성 보장"""
