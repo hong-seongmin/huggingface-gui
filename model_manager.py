@@ -205,27 +205,8 @@ class MultiModelManager:
             profiler.start_profiling("모델 로딩")
             profiler.memory_snapshot("초기 상태")
             
-            # 0단계: Lightning 로딩 시도 (초고속)
-            try:
-                profiler.checkpoint("0단계: Lightning 로딩 시도")
-                model, tokenizer, load_time = lightning_loader.lightning_load(actual_model_path, device)
-                
-                if model and tokenizer:
-                    profiler.checkpoint(f"Lightning 로딩 성공: {load_time:.1f}초")
-                    
-                    # 통합 디바이스 관리자로 일관성 보장
-                    model, tokenizer = device_manager.ensure_device_consistency(model, tokenizer)
-                    profiler.checkpoint("디바이스 일관성 보장 완료")
-                    profiler.memory_snapshot("Lightning 완료")
-                    
-                    # 분석 리포트 출력
-                    profiler.print_detailed_report()
-                    return model, tokenizer, load_time
-                else:
-                    profiler.checkpoint("Lightning 로딩 실패, 1단계로 전환")
-                    
-            except Exception as e:
-                profiler.checkpoint(f"Lightning 로딩 오류: {e}")
+            # Lightning 로더는 데모 모델을 생성하므로 실제 BGE-M3 사용을 위해 스킵
+            print("[DEBUG] Lightning 로더 스킵 - 실제 모델 로딩으로 진행")
             
             # 1단계: 병렬 로딩 시도 (가장 빠름)
             try:
