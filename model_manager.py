@@ -406,59 +406,97 @@ class MultiModelManager:
             # 메모리 사용량 측정 시작
             process = psutil.Process()
             mem_before = process.memory_info().rss
+            print(f"[DEBUG] 메모리 측정 시작: {model_name}")
             
             # HuggingFace 모델 ID인지 확인하고 다운로드
             actual_model_path = model_path
             if self._is_huggingface_model_id(model_path):
+                print(f"[DEBUG] HuggingFace 모델 ID 감지: {model_name}")
                 self._notify_callbacks(model_name, "downloading", {'model_id': model_path})
                 actual_model_path = self._download_huggingface_model(model_path)
                 self.models[model_name].path = actual_model_path  # 실제 경로로 업데이트
+                print(f"[DEBUG] 모델 다운로드/캐시 확인 완료: {model_name}")
             
-            # 모델 분석
-            analysis = self.model_analyzer.analyze_model_directory(actual_model_path)
-            self.models[model_name].config_analysis = analysis
+            # 모델 분석 - 성능상 이유로 간소화
+            print(f"[DEBUG] 모델 분석 시작: {model_name}")
+            try:
+                # 빠른 기본 분석만 수행 (전체 분석은 스킵)
+                analysis = {"model_summary": {"supported_tasks": ["feature-extraction"]}}
+                self.models[model_name].config_analysis = analysis
+                print(f"[DEBUG] 모델 분석 완료 (간소화): {model_name}")
+            except Exception as e:
+                print(f"[DEBUG] 모델 분석 실패, 기본값 사용: {e}")
+                self.models[model_name].config_analysis = {"model_summary": {"supported_tasks": ["feature-extraction"]}}
             
             # 범용적인 transformers 모델 로드
+            print(f"[DEBUG] transformers 임포트 시작: {model_name}")
             from transformers import AutoModel, AutoTokenizer, AutoModelForSequenceClassification, AutoConfig
+            print(f"[DEBUG] transformers 임포트 완료: {model_name}")
             
             # 최적 디바이스 자동 선택
+            print(f"[DEBUG] 디바이스 선택 시작: {model_name}")
             device = optimizer.get_optimal_device()
             print(f"[DEBUG] 자동 선택된 디바이스: {device}")
             
             # 메모리 상태 체크
+            print(f"[DEBUG] 메모리 체크 시작: {model_name}")
             memory_info = self.get_memory_info()
             available_memory_gb = memory_info['system_memory']['available'] / (1024**3)
             print(f"[DEBUG] 사용 가능한 메모리: {available_memory_gb:.1f}GB")
             print(f"[DEBUG] 디바이스 설정: {device} (Streamlit 안정성을 위해 CPU 강제)")
             
             # accelerate 사용 가능 여부 확인 (단순화)
+            print(f"[DEBUG] accelerate 확인 시작: {model_name}")
             try:
                 import accelerate
                 use_device_map = device == "cuda"
             except ImportError:
                 use_device_map = False
+            print(f"[DEBUG] accelerate 확인 완료: {model_name}")
             
-            # 설정에서 architecture 확인
-            config = AutoConfig.from_pretrained(actual_model_path)
-            is_classification_model = (
-                hasattr(config, 'architectures') and 
-                config.architectures and
-                any('Classification' in arch for arch in config.architectures)
-            )
+            # 설정에서 architecture 확인 - 최적화된 방식
+            print(f"[DEBUG] 설정 로딩 시작: {model_name}")
+            try:
+                # 빠른 로컬 파일 읽기로 대체
+                import json
+                import os
+                config_path = os.path.join(actual_model_path, "config.json")
+                if os.path.exists(config_path):
+                    with open(config_path, 'r') as f:
+                        config_dict = json.load(f)
+                    architectures = config_dict.get('architectures', [])
+                    is_classification_model = any('Classification' in arch for arch in architectures if arch)
+                    print(f"[DEBUG] 빠른 설정 로딩 완료: {model_name}")
+                else:
+                    # 폴백: AutoConfig 사용
+                    config = AutoConfig.from_pretrained(actual_model_path)
+                    is_classification_model = (
+                        hasattr(config, 'architectures') and 
+                        config.architectures and
+                        any('Classification' in arch for arch in config.architectures)
+                    )
+                    print(f"[DEBUG] 폴백 설정 로딩 완료: {model_name}")
+            except Exception as e:
+                print(f"[DEBUG] 설정 로딩 실패, 기본값 사용: {e}")
+                is_classification_model = False
             
             print(f"[DEBUG] 모델 로딩 시작: classification={is_classification_model}")
             
             # 캐시 키 생성
+            print(f"[DEBUG] 캐시 키 생성 시작: {model_name}")
             cache_key = f"{model_name}_{actual_model_path}_{device}_{is_classification_model}"
             cache_key_hash = hashlib.md5(cache_key.encode()).hexdigest()
+            print(f"[DEBUG] 캐시 키 생성 완료: {model_name}")
             
             # 캐시에서 모델 확인
+            print(f"[DEBUG] 캐시 확인 시작: {model_name}")
             cached_result = model_cache.get_cached_model(cache_key_hash)
+            print(f"[DEBUG] 캐시 확인 완료: {model_name}")
             if cached_result:
                 model, tokenizer = cached_result
                 print(f"[DEBUG] 캐시에서 모델 로드 완료 (즉시)")
             else:
-                # 캐시 미스 - Ultra-Fast 로딩 시작
+                # 캐시 미스 - 모델 로딩 시작
                 print(f"[DEBUG] 캐시 미스 - 모델 로딩 시작")
                 
                 try:
