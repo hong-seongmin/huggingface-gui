@@ -18,9 +18,14 @@ class DetailedProfiler:
         self.checkpoints = []
         self.memory_snapshots = []
         self.io_operations = []
+        # 프로파일링 활성화 여부 (환경변수로 제어)
+        self.enabled = os.getenv("ENABLE_PROFILING", "false").lower() == "true"
         
     def start_profiling(self, operation_name: str):
         """프로파일링 시작"""
+        if not self.enabled:
+            return
+            
         self.start_time = time.time()
         self.checkpoints = []
         self.memory_snapshots = []
@@ -31,7 +36,7 @@ class DetailedProfiler:
         
     def checkpoint(self, description: str):
         """체크포인트 기록"""
-        if self.start_time is None:
+        if not self.enabled or self.start_time is None:
             return
             
         current_time = time.time()
@@ -51,6 +56,9 @@ class DetailedProfiler:
     
     def memory_snapshot(self, stage: str):
         """메모리 스냅샷"""
+        if not self.enabled:
+            return
+            
         try:
             process = psutil.Process()
             memory_info = process.memory_info()
@@ -240,6 +248,9 @@ class DetailedProfiler:
     
     def print_detailed_report(self):
         """상세한 분석 리포트 출력"""
+        if not self.enabled:
+            return
+            
         analysis = self.analyze_bottlenecks()
         
         print("\n" + "="*80)

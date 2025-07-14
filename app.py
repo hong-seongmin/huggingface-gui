@@ -179,12 +179,13 @@ def delete_login_token():
     if os.path.exists(LOGIN_FILE):
         os.remove(LOGIN_FILE)
 
-# 앱 상태 저장 (dramatically reduced frequency)
-def save_app_state():
+# 앱 상태 저장 (변경사항 감지 및 중복 방지 최적화)
+def save_app_state(force=False):
     # Rate limit both logging AND actual saving
     if not hasattr(save_app_state, 'last_save_time'):
         save_app_state.last_save_time = 0
         save_app_state.last_log_time = 0
+        save_app_state.last_state = {}
     
     current_time = time.time()
     # Check if we're currently loading models
@@ -195,20 +196,10 @@ def save_app_state():
     log_interval = 120 if is_loading else 600  # Log even less frequently
     
     # Skip saving if we saved recently (unless forced)
-    if current_time - save_app_state.last_save_time < save_interval:
+    if not force and current_time - save_app_state.last_save_time < save_interval:
         return  # Don't save at all
     
-    # Update save time
-    save_app_state.last_save_time = current_time
-    
-    # Check if we should log
-    if current_time - save_app_state.last_log_time > log_interval:
-        logger.info("=== 상태 저장 시작 ===")
-        save_app_state.last_log_time = current_time
-        should_log = True
-    else:
-        should_log = False
-    
+    # 현재 상태 수집
     state = {
         'model_path_input': st.session_state.get('model_path_input', ''),
         'current_model_analysis': st.session_state.get('current_model_analysis', None),
@@ -221,6 +212,26 @@ def save_app_state():
         'cache_info_saved': st.session_state.get('cache_info') is not None,
         'revisions_count': len(st.session_state.get('revisions_df', pd.DataFrame()))
     }
+    
+    # 상태 변경 확인 (current_model_analysis는 크므로 제외하고 비교)
+    state_for_comparison = {k: v for k, v in state.items() if k != 'current_model_analysis'}
+    last_state_for_comparison = {k: v for k, v in save_app_state.last_state.items() if k != 'current_model_analysis'}
+    
+    # 상태가 변경되지 않았으면 스킵 (강제가 아닌 경우)
+    if not force and state_for_comparison == last_state_for_comparison:
+        return  # 변경사항 없음
+    
+    # Update save time
+    save_app_state.last_save_time = current_time
+    save_app_state.last_state = state.copy()
+    
+    # Check if we should log
+    if current_time - save_app_state.last_log_time > log_interval:
+        logger.info("=== 상태 저장 시작 ===")
+        save_app_state.last_log_time = current_time
+        should_log = True
+    else:
+        should_log = False
     
     if should_log:
         logger.info(f"저장할 상태: {state}")
@@ -366,8 +377,18 @@ def show_whoami():
     except Exception as e:
         st.error(f"사용자 정보를 불러오지 못했습니다: {e}")
 
-# 캐시 정보 스캔 및 화면에 표시하는 기능
-def scan_cache():
+# 캐시 정보 스캔 및 화면에 표시하는 기능 - 중복 실행 방지 최적화
+def scan_cache(force=False):
+    import time
+    
+    # 중복 실행 방지: 30초 이내 재실행 방지 (force=True인 경우 제외)
+    current_time = time.time()
+    if not force and hasattr(scan_cache, 'last_scan_time'):
+        time_since_last_scan = current_time - scan_cache.last_scan_time
+        if time_since_last_scan < 30:  # 30초 이내 중복 실행 방지
+            logger.info(f"캐시 스캔 스킵: {time_since_last_scan:.1f}초 전에 실행됨")
+            return
+    
     cache_info = scan_cache_dir()
     st.session_state['cache_info'] = cache_info
     logger.info(f"캐시 스캔: {len(cache_info.repos)}개 저장소")
@@ -388,6 +409,9 @@ def scan_cache():
     st.session_state['revisions_df'] = pd.DataFrame(revisions)
     st.session_state['cache_scanned'] = True
     logger.info(f"캐시 스캔 완료: {len(revisions)}개 항목")
+    
+    # 마지막 스캔 시간 기록
+    scan_cache.last_scan_time = current_time
 
 # 모델 다운로드 함수
 def download_model_to_cache(model_input, auto_scan=False):
@@ -1136,8 +1160,7 @@ def render_model_management():
             # 로딩 중인 모델이 없으면 체크 중단하고 UI 갱신
             st.session_state['check_loading'] = False
             st.success("🎉 모든 모델 로딩이 완료되었습니다!")
-            # 캐시 스캔 및 즉시 UI 갱신
-            scan_cache()
+            # 즉시 UI 갱신 (캐시 스캔 불필요 - 모델 로딩 완료와 캐시는 별개)
             # 상태 새로고침 자동 실행
             st.session_state['model_status_tracker']['need_refresh'] = True
             st.session_state['model_status_tracker']['force_ui_refresh'] = time.time()
@@ -1154,8 +1177,7 @@ def render_model_management():
         if 'load_success' in st.session_state:
             st.success(st.session_state['load_success'])
             del st.session_state['load_success']
-            # 로드 성공 시 즉시 캐시 스캔 및 UI 갱신
-            scan_cache()
+            # 로드 성공 시 UI 갱신 (캐시 스캔 불필요 - 모델 로딩과 캐시는 별개)
             st.rerun()
         if 'load_error' in st.session_state:
             st.error(st.session_state['load_error'])
@@ -2294,7 +2316,7 @@ def main():
             # 캐시 스캔 버튼 - 이미 스캔된 경우에도 "캐시 스캔"으로 표시하되 재스캔 기능 수행
             button_text = "🔍 캐시 스캔" if not st.session_state.get('cache_scanned', False) else "🔄 캐시 스캔"
             if st.button(button_text):
-                scan_cache()
+                scan_cache(force=True)  # 버튼 클릭 시에는 강제로 스캔
                 st.session_state['cache_scanned'] = True
                 # Cache scan state will be saved by the background save mechanism
                 st.rerun()

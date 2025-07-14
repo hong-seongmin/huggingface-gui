@@ -122,13 +122,25 @@ class MultiModelManager:
             # 모델 정보 확인
             model_info = self.hf_api.model_info(model_id)
             
-            # 로컬 캐시 디렉토리로 다운로드
-            local_path = snapshot_download(
-                repo_id=model_id,
-                repo_type="model",
-                cache_dir=None,  # 기본 캐시 디렉토리 사용
-                local_files_only=False
-            )
+            # 로컬 캐시 디렉토리로 다운로드 (이미 캐시된 경우 다운로드 방지)
+            try:
+                # 먼저 로컬 캐시에서 찾기 시도
+                local_path = snapshot_download(
+                    repo_id=model_id,
+                    repo_type="model", 
+                    cache_dir=None,  # 기본 캐시 디렉토리 사용
+                    local_files_only=True  # 이미 캐시된 파일만 사용
+                )
+                print(f"[DEBUG] 캐시에서 모델 찾음: {model_id}")
+            except Exception:
+                # 캐시에 없는 경우에만 다운로드
+                print(f"[DEBUG] 캐시 미스 - 다운로드 시작: {model_id}")
+                local_path = snapshot_download(
+                    repo_id=model_id,
+                    repo_type="model",
+                    cache_dir=None,  # 기본 캐시 디렉토리 사용
+                    local_files_only=False
+                )
             
             return local_path
             
@@ -189,7 +201,7 @@ class MultiModelManager:
             """Ultra-Fast 모델 로딩 - 상세한 병목 분석 포함"""
             print(f"[ULTRA-FAST] 혁신적인 모델 로딩 시작")
             
-            # 상세한 프로파일링 시작
+            # 상세한 프로파일링 시작 (프로파일러 내부에서 활성화 여부 확인)
             profiler.start_profiling("Ultra-Fast 모델 로딩")
             profiler.profile_transformers_loading()
             profiler.profile_safetensors_loading()
