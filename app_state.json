@@ -1,11 +1,425 @@
 {
-  "model_path_input": "tabularisai/multilingual-sentiment-analysis",
-  "current_model_analysis": null,
+  "model_path_input": "BAAI/bge-m3",
+  "current_model_analysis": {
+    "model_path": "/home/hong/.cache/huggingface/hub/models--tabularisai--multilingual-sentiment-analysis/snapshots/f0bcb3b4493d5be7da88fa86f0e0bfbd670a9e97",
+    "files_found": [
+      "config.json",
+      "tokenizer.json",
+      "tokenizer_config.json",
+      "vocab.txt",
+      "special_tokens_map.json",
+      "model.safetensors"
+    ],
+    "files_missing": [
+      "merges.txt",
+      "pytorch_model.bin",
+      "generation_config.json"
+    ],
+    "analysis_results": {
+      "config.json": {
+        "model_type": "distilbert",
+        "architectures": [
+          "DistilBertForSequenceClassification"
+        ],
+        "vocab_size": 119547,
+        "hidden_size": 0,
+        "num_hidden_layers": 0,
+        "num_attention_heads": 0,
+        "max_position_embeddings": 512,
+        "intermediate_size": 0,
+        "hidden_act": "unknown",
+        "hidden_dropout_prob": null,
+        "attention_probs_dropout_prob": null,
+        "initializer_range": 0.02,
+        "layer_norm_eps": null,
+        "task_specific_params": {},
+        "supported_tasks": [
+          "text-classification"
+        ],
+        "model_parameters": 0,
+        "full_config": {
+          "_name_or_path": "results/checkpoint-1400_best",
+          "activation": "gelu",
+          "architectures": [
+            "DistilBertForSequenceClassification"
+          ],
+          "attention_dropout": 0.1,
+          "dim": 768,
+          "dropout": 0.1,
+          "hidden_dim": 3072,
+          "id2label": {
+            "0": "Very Negative",
+            "1": "Negative",
+            "2": "Neutral",
+            "3": "Positive",
+            "4": "Very Positive"
+          },
+          "initializer_range": 0.02,
+          "label2id": {
+            "Negative": 1,
+            "Neutral": 2,
+            "Positive": 3,
+            "Very Negative": 0,
+            "Very Positive": 4
+          },
+          "max_position_embeddings": 512,
+          "model_type": "distilbert",
+          "n_heads": 12,
+          "n_layers": 6,
+          "output_past": true,
+          "pad_token_id": 0,
+          "problem_type": "single_label_classification",
+          "qa_dropout": 0.1,
+          "seq_classif_dropout": 0.2,
+          "sinusoidal_pos_embds": false,
+          "tie_weights_": true,
+          "torch_dtype": "float32",
+          "transformers_version": "4.46.3",
+          "vocab_size": 119547
+        }
+      },
+      "tokenizer.json": {
+        "version": "1.0",
+        "model_type": "WordPiece",
+        "vocab_size": 119547,
+        "special_tokens": {},
+        "pre_tokenizer": {
+          "type": "BertPreTokenizer"
+        },
+        "post_processor": {
+          "type": "TemplateProcessing",
+          "single": [
+            {
+              "SpecialToken": {
+                "id": "[CLS]",
+                "type_id": 0
+              }
+            },
+            {
+              "Sequence": {
+                "id": "A",
+                "type_id": 0
+              }
+            },
+            {
+              "SpecialToken": {
+                "id": "[SEP]",
+                "type_id": 0
+              }
+            }
+          ],
+          "pair": [
+            {
+              "SpecialToken": {
+                "id": "[CLS]",
+                "type_id": 0
+              }
+            },
+            {
+              "Sequence": {
+                "id": "A",
+                "type_id": 0
+              }
+            },
+            {
+              "SpecialToken": {
+                "id": "[SEP]",
+                "type_id": 0
+              }
+            },
+            {
+              "Sequence": {
+                "id": "B",
+                "type_id": 1
+              }
+            },
+            {
+              "SpecialToken": {
+                "id": "[SEP]",
+                "type_id": 1
+              }
+            }
+          ],
+          "special_tokens": {
+            "[CLS]": {
+              "id": "[CLS]",
+              "ids": [
+                101
+              ],
+              "tokens": [
+                "[CLS]"
+              ]
+            },
+            "[SEP]": {
+              "id": "[SEP]",
+              "ids": [
+                102
+              ],
+              "tokens": [
+                "[SEP]"
+              ]
+            }
+          }
+        },
+        "decoder": {
+          "type": "WordPiece",
+          "prefix": "##",
+          "cleanup": true
+        }
+      },
+      "tokenizer_config.json": {
+        "tokenizer_class": "DistilBertTokenizer",
+        "model_max_length": 512,
+        "padding_side": "unknown",
+        "truncation_side": "unknown",
+        "special_tokens": {
+          "added_tokens_decoder": {
+            "0": {
+              "content": "[PAD]",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "100": {
+              "content": "[UNK]",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "101": {
+              "content": "[CLS]",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "102": {
+              "content": "[SEP]",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            },
+            "103": {
+              "content": "[MASK]",
+              "lstrip": false,
+              "normalized": false,
+              "rstrip": false,
+              "single_word": false,
+              "special": true
+            }
+          },
+          "clean_up_tokenization_spaces": false,
+          "cls_token": "[CLS]",
+          "mask_token": "[MASK]",
+          "pad_token": "[PAD]",
+          "sep_token": "[SEP]",
+          "tokenize_chinese_chars": true,
+          "tokenizer_class": "DistilBertTokenizer",
+          "unk_token": "[UNK]"
+        },
+        "clean_up_tokenization_spaces": false
+      },
+      "vocab.txt": {
+        "vocab_size": 119547,
+        "special_tokens_found": [
+          "[PAD]",
+          "[unused1]",
+          "[unused2]",
+          "[unused3]",
+          "[unused4]",
+          "[unused5]",
+          "[unused6]",
+          "[unused7]",
+          "[unused8]",
+          "[unused9]",
+          "[unused10]",
+          "[unused11]",
+          "[unused12]",
+          "[unused13]",
+          "[unused14]",
+          "[unused15]",
+          "[unused16]",
+          "[unused17]",
+          "[unused18]",
+          "[unused19]",
+          "[unused20]",
+          "[unused21]",
+          "[unused22]",
+          "[unused23]",
+          "[unused24]",
+          "[unused25]",
+          "[unused26]",
+          "[unused27]",
+          "[unused28]",
+          "[unused29]",
+          "[unused30]",
+          "[unused31]",
+          "[unused32]",
+          "[unused33]",
+          "[unused34]",
+          "[unused35]",
+          "[unused36]",
+          "[unused37]",
+          "[unused38]",
+          "[unused39]",
+          "[unused40]",
+          "[unused41]",
+          "[unused42]",
+          "[unused43]",
+          "[unused44]",
+          "[unused45]",
+          "[unused46]",
+          "[unused47]",
+          "[unused48]",
+          "[unused49]",
+          "[unused50]",
+          "[unused51]",
+          "[unused52]",
+          "[unused53]",
+          "[unused54]",
+          "[unused55]",
+          "[unused56]",
+          "[unused57]",
+          "[unused58]",
+          "[unused59]",
+          "[unused60]",
+          "[unused61]",
+          "[unused62]",
+          "[unused63]",
+          "[unused64]",
+          "[unused65]",
+          "[unused66]",
+          "[unused67]",
+          "[unused68]",
+          "[unused69]",
+          "[unused70]",
+          "[unused71]",
+          "[unused72]",
+          "[unused73]",
+          "[unused74]",
+          "[unused75]",
+          "[unused76]",
+          "[unused77]",
+          "[unused78]",
+          "[unused79]",
+          "[unused80]",
+          "[unused81]",
+          "[unused82]",
+          "[unused83]",
+          "[unused84]",
+          "[unused85]",
+          "[unused86]",
+          "[unused87]",
+          "[unused88]",
+          "[unused89]",
+          "[unused90]",
+          "[unused91]",
+          "[unused92]",
+          "[unused93]",
+          "[unused94]",
+          "[unused95]",
+          "[unused96]",
+          "[unused97]",
+          "[unused98]",
+          "[unused99]"
+        ],
+        "sample_tokens": [
+          "[PAD]",
+          "[unused1]",
+          "[unused2]",
+          "[unused3]",
+          "[unused4]",
+          "[unused5]",
+          "[unused6]",
+          "[unused7]",
+          "[unused8]",
+          "[unused9]"
+        ]
+      },
+      "special_tokens_map.json": {
+        "cls_token": "[CLS]",
+        "mask_token": "[MASK]",
+        "pad_token": "[PAD]",
+        "sep_token": "[SEP]",
+        "unk_token": "[UNK]"
+      },
+      "model.safetensors": {
+        "file_size_mb": 516.2492790222168,
+        "tensor_count": 104,
+        "total_parameters": 135328517,
+        "metadata": {
+          "format": "pt"
+        }
+      }
+    },
+    "model_summary": {
+      "model_type": "distilbert",
+      "total_parameters": 135328517,
+      "model_size_mb": 516.2492790222168,
+      "supported_tasks": [
+        "text-classification"
+      ],
+      "tokenizer_type": "DistilBertTokenizer",
+      "max_sequence_length": 512,
+      "vocabulary_size": 119547,
+      "usage_examples": {
+        "text-classification": {
+          "description": "텍스트 분류 (감정 분석, 스팸 감지 등)",
+          "example_code": "# 1. 직접 사용\nfrom transformers import pipeline\nclassifier = pipeline(\"text-classification\", model=\"model_name\")\nresult = classifier(\"I love this product!\", max_length=512, truncation=True)\nprint(result)\n\n# 2. 서버 API 사용 (로컬)\nimport requests\nresponse = requests.post(\"http://127.0.0.1:8000/classify\", \n                        json={\"text\": \"I love this product!\"})\nprint(response.json())\n\n# 3. 서버 API 사용 (내부 IP)\nimport requests\nresponse = requests.post(\"http://172.28.177.205:8000/classify\", \n                        json={\"text\": \"I love this product!\"})\nprint(response.json())",
+          "example_input": "\"I love this product!\"",
+          "expected_output": "[{\"label\": \"POSITIVE\", \"score\": 0.9998}]",
+          "parameters": {
+            "max_length": 512,
+            "truncation": true,
+            "padding": true,
+            "special_tokens": {
+              "cls_token": "[CLS]",
+              "mask_token": "[MASK]",
+              "pad_token": "[PAD]",
+              "sep_token": "[SEP]",
+              "unk_token": "[UNK]"
+            }
+          }
+        }
+      },
+      "detailed_config": {
+        "architecture": "DistilBertForSequenceClassification",
+        "hidden_size": 0,
+        "num_attention_heads": 0,
+        "num_hidden_layers": 0,
+        "max_position_embeddings": 512,
+        "dropout": null,
+        "initializer_range": 0.02,
+        "layer_norm_eps": null,
+        "intermediate_size": 0,
+        "attention_dropout": null,
+        "activation_function": "unknown",
+        "tokenizer_max_length": 512,
+        "padding_side": "unknown",
+        "truncation_side": "unknown"
+      },
+      "embedding_info": {},
+      "model_capabilities": [
+        "텍스트 분류 (감정 분석, 스팸 감지 등)",
+        "중대형 모델 (일반적인 NLP 태스크 처리)"
+      ]
+    },
+    "recommendations": [],
+    "original_path": "tabularisai/multilingual-sentiment-analysis",
+    "actual_path": "/home/hong/.cache/huggingface/hub/models--tabularisai--multilingual-sentiment-analysis/snapshots/f0bcb3b4493d5be7da88fa86f0e0bfbd670a9e97"
+  },
   "auto_refresh_interval": 3,
-  "selected_cached_model": "tabularisai/multilingual-sentiment-analysis",
+  "selected_cached_model": "BAAI/bge-m3",
   "cache_expanded": false,
   "monitoring_active": true,
-  "fastapi_server_running": false,
+  "fastapi_server_running": true,
   "cache_scanned": true,
   "cache_info_saved": true,
   "revisions_count": 3
