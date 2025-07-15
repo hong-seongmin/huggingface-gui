@@ -81,9 +81,9 @@ class FastAPIServer:
         async def list_models():
             """로드된 모델 목록 반환"""
             loaded_models = self.model_manager.get_loaded_models()
-            # 특정 모델들만 서빙하는 서버인 경우 필터링
-            if target_models:
-                loaded_models = [m for m in loaded_models if m in target_models]
+            # 특정 모델들만 서빙하는 서버인 경우 필터링 (임시로 비활성화)
+            # if target_models:
+            #     loaded_models = [m for m in loaded_models if m in target_models]
             
             return {
                 "loaded_models": loaded_models,
@@ -151,9 +151,9 @@ class FastAPIServer:
             if not model_info or model_info.status != "loaded":
                 raise HTTPException(status_code=404, detail="Model not found or not loaded")
             
-            # 특정 모델들만 서빙하는 서버인 경우 체크
-            if target_models and model_name not in target_models:
-                raise HTTPException(status_code=404, detail="Model not available on this server")
+            # 특정 모델들만 서빙하는 서버인 경우 체크 (임시로 비활성화)
+            # if target_models and model_name not in target_models:
+            #     raise HTTPException(status_code=404, detail="Model not available on this server")
             
             # 모델과 토크나이저 가져오기
             model_tokenizer = self.model_manager.get_model_for_inference(model_name)
@@ -167,8 +167,12 @@ class FastAPIServer:
             if not available_tasks:
                 raise HTTPException(status_code=400, detail="No supported tasks found for this model")
             
-            # 첫 번째 지원 태스크 사용
-            task = available_tasks[0]
+            # 첫 번째 지원 태스크 사용, 단 sentiment 관련 모델은 강제로 text-classification 사용
+            if "sentiment" in model_name.lower() or "classifier" in model_name.lower():
+                task = "text-classification"
+                print(f"[DEBUG] Forcing text-classification task for {model_name}")
+            else:
+                task = available_tasks[0]
             
             try:
                 # 통합 추론 엔진 - 모든 태스크에 대해 직접 모델 추론 사용
