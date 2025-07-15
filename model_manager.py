@@ -366,9 +366,15 @@ class MultiModelManager:
                                 model = XLMRobertaModel(config)
                                 print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - XLMRobertaModel 초기화 완료")
                             elif model_type == "distilbert":
-                                from transformers import DistilBertModel
-                                model = DistilBertModel(config)
-                                print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DistilBertModel 초기화 완료")
+                                # 모델명에 따라 분류용 또는 기본 모델 선택
+                                if "sentiment" in model_name.lower() or "classification" in model_name.lower() or "classifier" in model_name.lower():
+                                    from transformers import DistilBertForSequenceClassification
+                                    model = DistilBertForSequenceClassification(config)
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DistilBertForSequenceClassification 초기화 완료")
+                                else:
+                                    from transformers import DistilBertModel
+                                    model = DistilBertModel(config)
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DistilBertModel 초기화 완료")
                             elif model_type == "bert":
                                 from transformers import BertModel
                                 model = BertModel(config)
@@ -478,8 +484,13 @@ class MultiModelManager:
                                     from transformers import XLMRobertaModel
                                     model = XLMRobertaModel(config)
                                 elif model_type == "distilbert":
-                                    from transformers import DistilBertModel
-                                    model = DistilBertModel(config)
+                                    # 모델명에 따라 분류용 또는 기본 모델 선택
+                                    if "sentiment" in model_name.lower() or "classification" in model_name.lower() or "classifier" in model_name.lower():
+                                        from transformers import DistilBertForSequenceClassification
+                                        model = DistilBertForSequenceClassification(config)
+                                    else:
+                                        from transformers import DistilBertModel
+                                        model = DistilBertModel(config)
                                 elif model_type == "bert":
                                     from transformers import BertModel
                                     model = BertModel(config)
@@ -520,15 +531,27 @@ class MultiModelManager:
                                 
                                 # 모델 타입별 최적화 설정
                                 if model_type == "distilbert":
-                                    # DistilBert는 작은 모델이므로 빠른 로딩 옵션
-                                    model = AutoModel.from_pretrained(
-                                        actual_model_path,
-                                        local_files_only=True,
-                                        torch_dtype=torch.float32,
-                                        trust_remote_code=False,  # DistilBert는 표준 모델
-                                        use_safetensors=has_safetensors,
-                                        low_cpu_mem_usage=False  # 작은 모델이므로 메모리 최적화 불필요
-                                    )
+                                    # 모델명에 따라 분류용 또는 기본 모델 선택
+                                    if "sentiment" in model_name.lower() or "classification" in model_name.lower() or "classifier" in model_name.lower():
+                                        from transformers import AutoModelForSequenceClassification
+                                        model = AutoModelForSequenceClassification.from_pretrained(
+                                            actual_model_path,
+                                            local_files_only=True,
+                                            torch_dtype=torch.float32,
+                                            trust_remote_code=False,
+                                            use_safetensors=has_safetensors,
+                                            low_cpu_mem_usage=False
+                                        )
+                                        print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - AutoModelForSequenceClassification 로딩 완료")
+                                    else:
+                                        model = AutoModel.from_pretrained(
+                                            actual_model_path,
+                                            local_files_only=True,
+                                            torch_dtype=torch.float32,
+                                            trust_remote_code=False,  # DistilBert는 표준 모델
+                                            use_safetensors=has_safetensors,
+                                            low_cpu_mem_usage=False  # 작은 모델이므로 메모리 최적화 불필요
+                                        )
                                 elif model_type == "xlm-roberta":
                                     # XLM-RoBERTa는 큰 모델이므로 메모리 최적화
                                     model = AutoModel.from_pretrained(
@@ -559,8 +582,13 @@ class MultiModelManager:
                                     from transformers import XLMRobertaModel
                                     model = XLMRobertaModel(config)
                                 elif model_type == "distilbert":
-                                    from transformers import DistilBertModel
-                                    model = DistilBertModel(config)
+                                    # 모델명에 따라 분류용 또는 기본 모델 선택
+                                    if "sentiment" in model_name.lower() or "classification" in model_name.lower() or "classifier" in model_name.lower():
+                                        from transformers import DistilBertForSequenceClassification
+                                        model = DistilBertForSequenceClassification(config)
+                                    else:
+                                        from transformers import DistilBertModel
+                                        model = DistilBertModel(config)
                                 elif model_type == "bert":
                                     from transformers import BertModel
                                     model = BertModel(config)
@@ -829,13 +857,24 @@ class MultiModelManager:
                 self.models[model_name].path = actual_model_path  # 실제 경로로 업데이트
                 print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델 다운로드/캐시 확인 완룼: {model_name}")
             
-            # 모델 분석 - 성능상 이유로 간소화
+            # 모델 분석 - 성능상 이유로 간소화하되 모델 타입에 따라 올바른 태스크 설정
             print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델 분석 시작: {model_name}")
             try:
-                # 빠른 기본 분석만 수행 (전체 분석은 스킵)
-                analysis = {"model_summary": {"supported_tasks": ["feature-extraction"]}}
+                # 모델 타입에 따라 적절한 태스크 설정
+                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델명 확인: '{model_name}', 소문자: '{model_name.lower()}'")
+                if "bge" in model_name.lower() or "embedding" in model_name.lower():
+                    supported_tasks = ["feature-extraction"]
+                    print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {model_name}: 임베딩 모델로 인식")
+                elif "sentiment" in model_name.lower() or "classification" in model_name.lower() or "classifier" in model_name.lower():
+                    supported_tasks = ["text-classification"]
+                    print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {model_name}: 감정분류 모델로 인식")
+                else:
+                    supported_tasks = ["feature-extraction"]
+                    print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {model_name}: 기본 모델로 인식")
+                
+                analysis = {"model_summary": {"supported_tasks": supported_tasks}}
                 self.models[model_name].config_analysis = analysis
-                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델 분석 완료 (간소화): {model_name}")
+                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델 분석 완료: {model_name}, 태스크: {supported_tasks}")
             except Exception as e:
                 print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델 분석 실패, 기본값 사용: {e}")
                 self.models[model_name].config_analysis = {"model_summary": {"supported_tasks": ["feature-extraction"]}}
@@ -1056,6 +1095,16 @@ class MultiModelManager:
             if analysis and 'model_summary' in analysis:
                 return analysis['model_summary'].get('supported_tasks', [])
         return []
+    
+    def update_model_task(self, model_name: str, tasks: List[str]) -> bool:
+        """모델의 지원 태스크 수동 업데이트"""
+        if model_name in self.models:
+            if not self.models[model_name].config_analysis:
+                self.models[model_name].config_analysis = {"model_summary": {}}
+            self.models[model_name].config_analysis["model_summary"]["supported_tasks"] = tasks
+            print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {model_name} 태스크 수동 업데이트: {tasks}")
+            return True
+        return False
     
     def export_models_info(self) -> Dict:
         """모델 정보 내보내기"""
