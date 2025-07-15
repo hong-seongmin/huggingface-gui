@@ -13,6 +13,7 @@ from model_optimization import optimizer
 from model_cache import model_cache
 from device_manager import device_manager
 from detailed_profiler import profiler
+from model_type_detector import ModelTypeDetector
 from huggingface_hub import hf_hub_download, snapshot_download, HfApi
 
 @dataclass
@@ -34,6 +35,7 @@ class MultiModelManager:
         self.max_memory_threshold = 0.8  # 80% 메모리 사용률 제한
         self.load_queue = []
         self.model_analyzer = ComprehensiveModelAnalyzer()
+        self.model_type_detector = ModelTypeDetector()
         self.callbacks: List[Callable] = []
         self.hf_api = HfApi()
         
@@ -366,15 +368,15 @@ class MultiModelManager:
                                 model = XLMRobertaModel(config)
                                 print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - XLMRobertaModel 초기화 완료")
                             elif model_type == "distilbert":
-                                # 모델명에 따라 분류용 또는 기본 모델 선택
-                                if "sentiment" in model_name.lower() or "classification" in model_name.lower() or "classifier" in model_name.lower():
+                                # 정밀한 모델 분석 결과를 기반으로 분류용 또는 기본 모델 선택
+                                if self._should_use_classification_model(model_name):
                                     from transformers import DistilBertForSequenceClassification
                                     model = DistilBertForSequenceClassification(config)
-                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DistilBertForSequenceClassification 초기화 완료")
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DistilBertForSequenceClassification 초기화 완료 (정밀 분석 기반)")
                                 else:
                                     from transformers import DistilBertModel
                                     model = DistilBertModel(config)
-                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DistilBertModel 초기화 완료")
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DistilBertModel 초기화 완료 (정밀 분석 기반)")
                             elif model_type == "bert":
                                 from transformers import BertModel
                                 model = BertModel(config)
@@ -484,8 +486,8 @@ class MultiModelManager:
                                     from transformers import XLMRobertaModel
                                     model = XLMRobertaModel(config)
                                 elif model_type == "distilbert":
-                                    # 모델명에 따라 분류용 또는 기본 모델 선택
-                                    if "sentiment" in model_name.lower() or "classification" in model_name.lower() or "classifier" in model_name.lower():
+                                    # 정밀한 모델 분석 결과를 기반으로 분류용 또는 기본 모델 선택
+                                    if self._should_use_classification_model(model_name):
                                         from transformers import DistilBertForSequenceClassification
                                         model = DistilBertForSequenceClassification(config)
                                     else:
@@ -531,8 +533,8 @@ class MultiModelManager:
                                 
                                 # 모델 타입별 최적화 설정
                                 if model_type == "distilbert":
-                                    # 모델명에 따라 분류용 또는 기본 모델 선택
-                                    if "sentiment" in model_name.lower() or "classification" in model_name.lower() or "classifier" in model_name.lower():
+                                    # 정밀한 모델 분석 결과를 기반으로 분류용 또는 기본 모델 선택
+                                    if self._should_use_classification_model(model_name):
                                         from transformers import AutoModelForSequenceClassification
                                         model = AutoModelForSequenceClassification.from_pretrained(
                                             actual_model_path,
@@ -542,7 +544,7 @@ class MultiModelManager:
                                             use_safetensors=has_safetensors,
                                             low_cpu_mem_usage=False
                                         )
-                                        print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - AutoModelForSequenceClassification 로딩 완료")
+                                        print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - AutoModelForSequenceClassification 로딩 완료 (정밀 분석 기반)")
                                     else:
                                         model = AutoModel.from_pretrained(
                                             actual_model_path,
@@ -582,8 +584,8 @@ class MultiModelManager:
                                     from transformers import XLMRobertaModel
                                     model = XLMRobertaModel(config)
                                 elif model_type == "distilbert":
-                                    # 모델명에 따라 분류용 또는 기본 모델 선택
-                                    if "sentiment" in model_name.lower() or "classification" in model_name.lower() or "classifier" in model_name.lower():
+                                    # 정밀한 모델 분석 결과를 기반으로 분류용 또는 기본 모델 선택
+                                    if self._should_use_classification_model(model_name):
                                         from transformers import DistilBertForSequenceClassification
                                         model = DistilBertForSequenceClassification(config)
                                     else:
@@ -857,26 +859,36 @@ class MultiModelManager:
                 self.models[model_name].path = actual_model_path  # 실제 경로로 업데이트
                 print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델 다운로드/캐시 확인 완룼: {model_name}")
             
-            # 모델 분석 - 성능상 이유로 간소화하되 모델 타입에 따라 올바른 태스크 설정
-            print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델 분석 시작: {model_name}")
+            # 정밀한 모델 타입 자동 감지 시스템 사용
+            print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 정밀한 모델 분석 시작: {model_name}")
             try:
-                # 모델 타입에 따라 적절한 태스크 설정
-                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델명 확인: '{model_name}', 소문자: '{model_name.lower()}'")
-                if "bge" in model_name.lower() or "embedding" in model_name.lower():
-                    supported_tasks = ["feature-extraction"]
-                    print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {model_name}: 임베딩 모델로 인식")
-                elif "sentiment" in model_name.lower() or "classification" in model_name.lower() or "classifier" in model_name.lower():
-                    supported_tasks = ["text-classification"]
-                    print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {model_name}: 감정분류 모델로 인식")
-                else:
-                    supported_tasks = ["feature-extraction"]
-                    print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {model_name}: 기본 모델로 인식")
+                # ModelTypeDetector를 사용한 정밀한 분석
+                task_type, model_class, detection_info = self.model_type_detector.detect_model_type(model_name, actual_model_path)
                 
-                analysis = {"model_summary": {"supported_tasks": supported_tasks}}
+                supported_tasks = [task_type]
+                
+                # 분석 정보 저장
+                analysis = {
+                    "model_summary": {
+                        "supported_tasks": supported_tasks,
+                        "recommended_model_class": model_class,
+                        "detection_method": detection_info.get("detection_method", []),
+                        "confidence": detection_info.get("confidence", 0.0),
+                        "fallback_used": detection_info.get("fallback_used", False)
+                    }
+                }
+                
                 self.models[model_name].config_analysis = analysis
-                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델 분석 완료: {model_name}, 태스크: {supported_tasks}")
+                
+                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 정밀한 모델 분석 완료:")
+                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} -   모델: {model_name}")
+                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} -   태스크: {task_type}")
+                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} -   클래스: {model_class}")
+                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} -   신뢰도: {detection_info.get('confidence', 0.0):.2f}")
+                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} -   방법: {', '.join(detection_info.get('detection_method', []))}")
+                
             except Exception as e:
-                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 모델 분석 실패, 기본값 사용: {e}")
+                print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 정밀한 모델 분석 실패, 기본값 사용: {e}")
                 self.models[model_name].config_analysis = {"model_summary": {"supported_tasks": ["feature-extraction"]}}
             
             # 범용적인 transformers 모델 로드
@@ -1105,6 +1117,38 @@ class MultiModelManager:
             print(f"[DEBUG] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - {model_name} 태스크 수동 업데이트: {tasks}")
             return True
         return False
+    
+    def _should_use_classification_model(self, model_name: str) -> bool:
+        """모델 분석 정보를 기반으로 분류 모델 사용 여부 결정"""
+        if model_name in self.models:
+            analysis = self.models[model_name].config_analysis
+            if analysis and "model_summary" in analysis:
+                recommended_class = analysis["model_summary"].get("recommended_model_class", "")
+                supported_tasks = analysis["model_summary"].get("supported_tasks", [])
+                
+                # 추천 클래스가 분류 모델인지 확인
+                if "SequenceClassification" in recommended_class:
+                    return True
+                
+                # 지원 태스크가 분류 관련인지 확인
+                classification_tasks = ["text-classification", "sentiment-analysis"]
+                if any(task in supported_tasks for task in classification_tasks):
+                    return True
+        
+        # 백업: 기존 키워드 매칭
+        return any(keyword in model_name.lower() for keyword in ["sentiment", "classification", "classifier"])
+    
+    def _get_recommended_model_class(self, model_name: str, model_type: str) -> str:
+        """감지된 정보를 기반으로 권장 모델 클래스 반환"""
+        if model_name in self.models:
+            analysis = self.models[model_name].config_analysis
+            if analysis and "model_summary" in analysis:
+                recommended_class = analysis["model_summary"].get("recommended_model_class", "")
+                if recommended_class:
+                    # 구체적인 모델 타입 클래스로 변환
+                    return self.model_type_detector.get_model_specific_class(recommended_class, model_type)
+        
+        return None
     
     def export_models_info(self) -> Dict:
         """모델 정보 내보내기"""
