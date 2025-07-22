@@ -31,11 +31,194 @@ logger = logging.getLogger('HF_GUI')
 
 # localStorage는 더 이상 사용하지 않음 (파일 기반 상태 저장 사용)
 
+# API 가이드용 모델 타입 감지 함수 (모든 HuggingFace 아키텍처 지원)
+def detect_model_type_for_api_guide(model_name: str) -> str:
+    """API 가이드에서 사용할 모델 타입을 감지합니다. 모든 HuggingFace 아키텍처 지원."""
+    model_name_lower = model_name.lower()
+    
+    # === TEXT GENERATION MODELS ===
+    # GPT 계열
+    if any(keyword in model_name_lower for keyword in ['gpt', 'gpt2', 'gpt-3', 'gpt-4', 'gpt-neo', 'gpt-j']):
+        return "text-generation"
+    
+    # Large Language Models
+    elif any(keyword in model_name_lower for keyword in ['llama', 'llama2', 'llama3', 'alpaca', 'vicuna']):
+        return "text-generation"
+    
+    # Mistral 계열
+    elif any(keyword in model_name_lower for keyword in ['mistral', 'mixtral', 'mamba']):
+        return "text-generation"
+    
+    # Phi 계열
+    elif any(keyword in model_name_lower for keyword in ['phi', 'phi-2', 'phi-3']):
+        return "text-generation"
+    
+    # Qwen 계열
+    elif any(keyword in model_name_lower for keyword in ['qwen', 'qwen2', 'qwen-vl']):
+        return "text-generation"
+    
+    # Gemma 계열
+    elif any(keyword in model_name_lower for keyword in ['gemma', 'gemma-2', 'gemma-7b']):
+        return "text-generation"
+    
+    # Code 생성 모델
+    elif any(keyword in model_name_lower for keyword in ['codegen', 'code-llama', 'starcoder', 'codebert']):
+        return "text-generation"
+    
+    # Chat/Instruct 모델
+    elif any(keyword in model_name_lower for keyword in ['chat', 'instruct', 'dialogue', 'conversational']):
+        return "text-generation"
+    
+    # === SEQUENCE-TO-SEQUENCE MODELS ===
+    # T5 계열
+    elif any(keyword in model_name_lower for keyword in ['t5', 'flan-t5', 'ul2']):
+        return "text2text-generation"
+    
+    # BART 계열
+    elif any(keyword in model_name_lower for keyword in ['bart', 'mbart', 'blenderbot']):
+        return "text2text-generation"
+    
+    # === SUMMARIZATION MODELS ===
+    elif any(keyword in model_name_lower for keyword in ['pegasus', 'led', 'longformer-encoder-decoder']):
+        return "summarization"
+    
+    # === TRANSLATION MODELS ===
+    elif any(keyword in model_name_lower for keyword in ['opus-mt', 'nllb', 'marian', 'm2m100', 'madlad400']):
+        return "translation"
+    
+    # === CLASSIFICATION MODELS ===
+    # DeBERTa 계열
+    elif 'deberta' in model_name_lower:
+        if any(keyword in model_name_lower for keyword in ['classification', 'sentiment', 'multitask']):
+            return "text-classification"
+        elif any(keyword in model_name_lower for keyword in ['ner', 'token']):
+            return "token-classification"
+        elif any(keyword in model_name_lower for keyword in ['qa', 'question']):
+            return "question-answering"
+        else:
+            return "text-classification"
+    
+    # ELECTRA 계열
+    elif 'electra' in model_name_lower:
+        if any(keyword in model_name_lower for keyword in ['ner', 'token']):
+            return "token-classification"
+        elif any(keyword in model_name_lower for keyword in ['classification', 'sentiment']):
+            return "text-classification"
+        else:
+            return "token-classification"
+    
+    # BERT 계열 (모든 변형 포함)
+    elif any(keyword in model_name_lower for keyword in ['bert', 'roberta', 'albert', 'distilbert']):
+        if any(keyword in model_name_lower for keyword in ['ner', 'token']):
+            return "token-classification"
+        elif any(keyword in model_name_lower for keyword in ['qa', 'question', 'squad']):
+            return "question-answering"
+        else:
+            return "text-classification"
+    
+    # XLM 계열
+    elif any(keyword in model_name_lower for keyword in ['xlm', 'xlm-roberta', 'xlnet']):
+        return "text-classification"
+    
+    # 기타 인코더 모델
+    elif any(keyword in model_name_lower for keyword in ['camembert', 'flaubert', 'convbert', 'mobilebert']):
+        return "text-classification"
+    
+    # === FEATURE EXTRACTION MODELS ===
+    # 임베딩 모델들
+    elif any(keyword in model_name_lower for keyword in ['bge', 'e5', 'gte', 'instructor', 'sentence']):
+        return "feature-extraction"
+    
+    # Sentence Transformers
+    elif any(keyword in model_name_lower for keyword in ['all-minilm', 'all-mpnet', 'paraphrase']):
+        return "feature-extraction"
+    
+    # === MULTIMODAL MODELS ===
+    # CLIP 계열
+    elif any(keyword in model_name_lower for keyword in ['clip', 'blip', 'blip2']):
+        return "multimodal"
+    
+    # Vision-Language 모델
+    elif any(keyword in model_name_lower for keyword in ['layoutlm', 'donut', 'pix2struct']):
+        return "multimodal"
+    
+    # === VISION MODELS ===
+    elif any(keyword in model_name_lower for keyword in ['vit', 'deit', 'swin', 'convnext', 'resnet']):
+        return "image-classification"
+    
+    # === AUDIO MODELS ===
+    elif any(keyword in model_name_lower for keyword in ['wav2vec2', 'whisper', 'speecht5', 'hubert']):
+        return "automatic-speech-recognition"
+    
+    # === FILL-MASK MODELS ===
+    elif any(keyword in model_name_lower for keyword in ['masked', 'mlm', 'fill-mask']):
+        return "fill-mask"
+    
+    # === SPECIFIC TASK INDICATORS ===
+    # 감정 분석
+    elif any(keyword in model_name_lower for keyword in ['sentiment', 'emotion', 'affect', 'polarity']):
+        return "text-classification"
+    
+    # NER 모델
+    elif any(keyword in model_name_lower for keyword in ['ner', 'named-entity', 'token-class']):
+        return "token-classification"
+    
+    # 질문 답변
+    elif any(keyword in model_name_lower for keyword in ['qa', 'question', 'squad', 'answer']):
+        return "question-answering"
+    
+    # 요약
+    elif any(keyword in model_name_lower for keyword in ['summary', 'summarization', 'abstract']):
+        return "summarization"
+    
+    # 번역
+    elif any(keyword in model_name_lower for keyword in ['translation', 'translate', 'mt-']):
+        return "translation"
+    
+    # 텍스트 생성
+    elif any(keyword in model_name_lower for keyword in ['generation', 'generator', 'lm', 'causal']):
+        return "text-generation"
+    
+    # 임베딩
+    elif any(keyword in model_name_lower for keyword in ['embedding', 'encode', 'similarity', 'retrieval']):
+        return "feature-extraction"
+    
+    # === SPECIAL ARCHITECTURES ===
+    # Long sequence 모델
+    elif any(keyword in model_name_lower for keyword in ['longformer', 'bigbird', 'reformer']):
+        return "text-classification"
+    
+    # Efficient 모델
+    elif any(keyword in model_name_lower for keyword in ['mobilenet', 'efficientnet', 'squeezenet']):
+        return "image-classification"
+    
+    # === LANGUAGE-SPECIFIC MODELS ===
+    # 한국어 모델
+    elif any(keyword in model_name_lower for keyword in ['ko-', 'korean', 'klue', 'kcbert']):
+        if any(keyword in model_name_lower for keyword in ['ner', 'token']):
+            return "token-classification"
+        else:
+            return "text-classification"
+    
+    # 중국어 모델
+    elif any(keyword in model_name_lower for keyword in ['chinese', 'zh-', 'bert-base-chinese']):
+        return "text-classification"
+    
+    # 일본어 모델
+    elif any(keyword in model_name_lower for keyword in ['japanese', 'ja-', 'bert-base-japanese']):
+        return "text-classification"
+    
+    # === DEFAULT FALLBACK ===
+    # 기본값 - 가장 일반적인 태스크
+    else:
+        return "text-classification"
+
 # 새로운 모듈들 import
 from model_manager import MultiModelManager
 from system_monitor import SystemMonitor
 from fastapi_server import FastAPIServer
 from model_analyzer import ComprehensiveModelAnalyzer
+from model_type_detector import ModelTypeDetector
 
 # 로그인 상태를 저장할 파일 경로 설정
 LOGIN_FILE = "login_token.txt"
@@ -1751,7 +1934,7 @@ def render_fastapi_server():
             ```
             """)
         
-        # 모델별 예측 엔드포인트
+        # 모델별 예측 엔드포인트 - 완전히 새로운 버전
         with st.expander("🤖 모델 예측 API", expanded=True):
             if loaded_models:
                 for model_name in loaded_models:
@@ -1763,66 +1946,2071 @@ def render_fastapi_server():
                     else:
                         model_port = 8000
                     
-                    st.markdown(f"#### {model_name}")
+                    st.markdown(f"### 🎯 {model_name}")
                     
-                    # 모델 유형에 따른 예제
-                    if 'bge' in model_name.lower():
-                        # BGE 임베딩 모델
-                        st.markdown(f"""
-                        **임베딩 생성 (BGE-M3)**
-                        ```bash
-                        curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
-                             -H "Content-Type: application/json" \\
-                             -d '{{"text": "Hello, world!"}}'
-                        ```
-                        
-                        **Python 예제:**
-                        ```python
-                        import requests
-                        
-                        response = requests.post(
-                            "http://localhost:{model_port}/models/{model_name}/predict",
-                            json={{"text": "Hello, world!"}}
-                        )
-                        result = response.json()
-                        print(f"임베딩 크기: {{len(result['result'][0][0])}}")
-                        ```
-                        """)
+                    # 모델 유형 자동 감지 및 맞춤형 예제 생성
+                    model_type = detect_model_type_for_api_guide(model_name)
                     
-                    elif 'sentiment' in model_name.lower() or 'classification' in model_name.lower():
-                        # 감정 분석 모델
-                        st.markdown(f"""
-                        **감정 분석 (Sentiment Analysis)**
-                        ```bash
-                        curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
-                             -H "Content-Type: application/json" \\
-                             -d '{{"text": "I love this product!"}}'
-                        ```
-                        
-                        **Python 예제:**
-                        ```python
-                        import requests
-                        
-                        response = requests.post(
-                            "http://localhost:{model_port}/models/{model_name}/predict",
-                            json={{"text": "I love this product!"}}
-                        )
-                        result = response.json()
-                        print(f"감정: {{result['result'][0]['label']}}")
-                        print(f"신뢰도: {{result['result'][0]['score']:.4f}}")
-                        ```
-                        """)
+                    # 모델 타입 배지 표시
+                    if model_type == "text-classification":
+                        st.markdown("🏷️ **모델 타입:** 텍스트 분류 (Text Classification)")
+                    elif model_type == "token-classification":
+                        st.markdown("🏷️ **모델 타입:** 개체명 인식 (Named Entity Recognition)")
+                    elif model_type == "feature-extraction":
+                        st.markdown("🔍 **모델 타입:** 임베딩 추출 (Feature Extraction)")
+                    elif model_type == "question-answering":
+                        st.markdown("❓ **모델 타입:** 질문 답변 (Question Answering)")
+                    elif model_type == "text-generation":
+                        st.markdown("🤖 **모델 타입:** 텍스트 생성 (Text Generation)")
+                    elif model_type == "summarization":
+                        st.markdown("📝 **모델 타입:** 텍스트 요약 (Summarization)")
+                    elif model_type == "translation":
+                        st.markdown("🌍 **모델 타입:** 번역 (Translation)")
                     
-                    else:
-                        # 기본 모델
-                        st.markdown(f"""
-                        **기본 예측 API**
-                        ```bash
-                        curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
-                             -H "Content-Type: application/json" \\
-                             -d '{{"text": "Input text here"}}'
-                        ```
-                        """)
+                    # 탭으로 구분된 예제들
+                    tab1, tab2, tab3, tab4 = st.tabs(["🖥️ cURL", "🐍 Python", "📱 JavaScript", "⚙️ 고급"])
+                    
+                    with tab1:
+                        # cURL 예제
+                        if model_type == "text-classification":
+                            st.code(f'''# 🏷️ 텍스트 분류/감정 분석 (BERT, RoBERTa, DeBERTa)
+
+# 1. 기본 분류 (기본 파라미터)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "이 제품은 정말 훌륭합니다! 강력 추천해요.",
+       "return_all_scores": false,
+       "function_to_apply": "softmax"
+     }}'
+
+# 2. 상세 분류 결과 (모든 클래스 확률)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "This product is amazing! Highly recommend.",
+       "return_all_scores": true,
+       "function_to_apply": "softmax",
+       "top_k": 3
+     }}'
+
+# 3. 배치 처리 (여러 텍스트 동시 처리)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "texts": [
+         "좋은 제품이에요",
+         "별로 마음에 안들어요", 
+         "그냥 그래요"
+       ],
+       "return_all_scores": true,
+       "function_to_apply": "softmax",
+       "truncation": true,
+       "max_length": 512
+     }}'
+
+# 4. 고급 파라미터 (DeBERTa/RoBERTa 최적화)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "복잡한 감정이 섞인 긴 텍스트 리뷰...",
+       "return_all_scores": true,
+       "function_to_apply": "softmax",
+       "truncation": true,
+       "max_length": 512,
+       "stride": 128,
+       "return_overflowing_tokens": true,
+       "padding": "max_length"
+     }}'
+
+# 5. 신뢰도 임계값 설정
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "애매한 감정의 텍스트",
+       "return_all_scores": true,
+       "function_to_apply": "softmax",
+       "threshold": 0.8,
+       "top_k": 2
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "token-classification":
+                            st.code(f'''# 🏷️ 개체명 인식 (NER) - ELECTRA, KoBERT, DeBERTa-NER
+
+# 1. 기본 NER (기본 파라미터)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "김철수는 서울특별시에서 태어나 삼성전자에서 일하고 있다.",
+       "aggregation_strategy": "simple",
+       "ignore_labels": ["O"]
+     }}'
+
+# 2. 고급 NER 설정 (임계값 및 집계 전략)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "John Smith works at Google in New York City.",
+       "aggregation_strategy": "max",
+       "ignore_labels": ["O"],
+       "threshold": 0.5,
+       "stride": 16,
+       "return_overflowing_tokens": true
+     }}'
+
+# 3. 긴 문서 처리 (슬라이딩 윈도우)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "이순신 장군은 1545년 4월 28일 서울에서 태어났다. 조선 중기의 무신으로 임진왜란과 정유재란에서 큰 공을 세웠다. 한산도 대첩에서 거북선을 이용해 일본군을 크게 물리쳤다.",
+       "aggregation_strategy": "first",
+       "ignore_labels": ["O", "B-MISC"],
+       "threshold": 0.7,
+       "max_length": 512,
+       "stride": 128,
+       "truncation": true,
+       "return_overflowing_tokens": true
+     }}'
+
+# 4. 배치 처리 (여러 문서 동시 처리)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "texts": [
+         "김철수는 서울에서 근무합니다.",
+         "이영희는 부산 출신입니다.",
+         "박민수는 구글에서 일합니다."
+       ],
+       "aggregation_strategy": "average",
+       "ignore_labels": ["O"],
+       "threshold": 0.6,
+       "return_all_scores": true
+     }}'
+
+# 5. 세밀한 토큰 분석 (모든 토큰 점수 반환)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "2024년 1월 15일 애플이 새로운 iPhone을 발표했다.",
+       "aggregation_strategy": "none",
+       "ignore_labels": [],
+       "return_all_scores": true,
+       "offset_mapping": true,
+       "special_tokens_mask": true
+     }}'
+
+# 6. 특정 개체 유형만 추출
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "BTS의 RM이 유엔에서 연설했다.",
+       "aggregation_strategy": "simple",
+       "ignore_labels": ["O", "B-MISC", "I-MISC"],
+       "threshold": 0.8,
+       "entity_types": ["PER", "ORG", "LOC"]
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "feature-extraction":
+                            st.code(f'''# 🔍 임베딩 벡터 추출 - BGE, Sentence-BERT, E5
+
+# 1. 기본 임베딩 추출 (CLS 토큰)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "안녕하세요, 반갑습니다!",
+       "normalize": true,
+       "return_tensors": "pt"
+     }}'
+
+# 2. 다양한 풀링 전략 적용
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "This is a sample text for embedding.",
+       "pooling_strategy": "mean",
+       "normalize": true,
+       "return_attention_mask": true,
+       "return_token_type_ids": true
+     }}'
+
+# 3. 배치 임베딩 (여러 텍스트 동시 처리)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "texts": [
+         "첫 번째 문장의 임베딩",
+         "두 번째 문장의 임베딩",
+         "세 번째 문장의 임베딩"
+       ],
+       "pooling_strategy": "cls",
+       "normalize": true,
+       "max_length": 512,
+       "truncation": true,
+       "padding": "max_length"
+     }}'
+
+# 4. 긴 문서 임베딩 (슬라이딩 윈도우)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "인공지능은 현재 우리 사회의 다양한 분야에서 혁신을 이끌고 있습니다. 의료진단, 자율주행, 언어번역 등 광범위한 응용이 가능합니다...",
+       "pooling_strategy": "mean",
+       "normalize": true,
+       "max_length": 512,
+       "stride": 256,
+       "return_overflowing_tokens": true,
+       "truncation": true
+     }}'
+
+# 5. 고급 임베딩 설정 (BGE-M3 최적화)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "Multilingual embedding extraction",
+       "pooling_strategy": "weighted_mean",
+       "normalize": true,
+       "layer_index": -1,
+       "return_all_layers": false,
+       "attention_mask": true,
+       "token_type_ids": true,
+       "output_hidden_states": false
+     }}'
+
+# 6. 토큰별 임베딩 (세밀한 분석)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "토큰별 임베딩 추출 예제",
+       "pooling_strategy": "none",
+       "normalize": false,
+       "return_all_tokens": true,
+       "return_attention_mask": true,
+       "return_offsets_mapping": true,
+       "output_hidden_states": true,
+       "output_attentions": false
+     }}'
+
+# 7. 유사도 계산용 임베딩 쌍
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text_pairs": [
+         ["질문: 날씨가 어떤가요?", "답변: 오늘은 맑습니다."],
+         ["첫 번째 문서", "두 번째 문서"]
+       ],
+       "pooling_strategy": "cls",
+       "normalize": true,
+       "return_similarity": true,
+       "similarity_function": "cosine"
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "question-answering":
+                            st.code(f'''# ❓ 질문 답변 - BERT-QA, RoBERTa-QA, DeBERTa-QA
+
+# 1. 기본 질문 답변
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "question": "대한민국의 수도는?",
+       "context": "대한민국의 수도는 서울특별시이다. 서울은 한강을 중심으로 발전했다.",
+       "max_answer_length": 30,
+       "max_seq_length": 384,
+       "max_query_length": 64
+     }}'
+
+# 2. 상세 설정 (신뢰도 및 다중 답변)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "question": "언제 태어났나?",
+       "context": "김철수는 1990년 5월 15일 서울에서 태어났다. 그의 형 김영수는 1988년 3월 10일에 태어났다.",
+       "top_k": 3,
+       "max_answer_length": 50,
+       "handle_impossible_answer": true,
+       "threshold": 0.1
+     }}'
+
+# 3. 긴 문서 처리 (문서 스트라이드)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "question": "주요 업적은 무엇인가?",
+       "context": "이순신 장군은 1545년 4월 28일 서울에서 태어났다. 조선 중기의 무신으로 임진왜란과 정유재란에서 큰 공을 세웠다. 한산도 대첩에서 거북선을 이용해 일본군을 크게 물리쳤다. 명량대첩에서는 13척의 배로 133척의 일본군을 물리치는 기적을 일으켰다.",
+       "max_seq_length": 512,
+       "doc_stride": 128,
+       "max_answer_length": 100,
+       "return_overflowing_tokens": true,
+       "stride": 128
+     }}'
+
+# 4. 배치 질문 답변
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "questions": [
+         "누구의 이야기인가?",
+         "언제 일어난 일인가?",
+         "어디에서 일어났나?"
+       ],
+       "context": "2024년 1월 15일 서울에서 김철수가 새로운 회사를 창업했다.",
+       "max_answer_length": 30,
+       "return_all_answers": true,
+       "top_k": 2
+     }}'
+
+# 5. 불가능한 답변 처리
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "question": "달의 색깔은?",
+       "context": "김철수는 서울에서 태어났다. 그는 컴퓨터 과학을 전공했다.",
+       "handle_impossible_answer": true,
+       "impossible_answer_threshold": 0.5,
+       "null_score_diff_threshold": 0.0,
+       "max_answer_length": 50
+     }}'
+
+# 6. 고급 답변 추출 (점수 및 위치 정보)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "question": "어떤 기술을 사용했나?",
+       "context": "거북선은 조선시대의 혁신적인 군함이다. 철갑으로 덮여 있어서 적의 공격을 막을 수 있었다. 화포를 장착하여 강력한 공격력을 가지고 있었다.",
+       "return_answer_start_end": true,
+       "return_confidence_score": true,
+       "output_scores": true,
+       "max_answer_length": 80,
+       "min_answer_length": 1
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "text-generation":
+                            st.code(f'''# 🤖 텍스트 생성 - GPT, GPT-2, BART, T5
+
+# 1. 기본 텍스트 생성 (greedy decoding)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "인공지능의 미래는",
+       "max_length": 100,
+       "min_length": 20,
+       "do_sample": false,
+       "num_return_sequences": 1
+     }}'
+
+# 2. 창의적 생성 (sampling with temperature)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "옛날 옛적에",
+       "max_length": 200,
+       "min_length": 50,
+       "do_sample": true,
+       "temperature": 0.8,
+       "top_p": 0.9,
+       "top_k": 50,
+       "num_return_sequences": 3
+     }}'
+
+# 3. 고급 생성 설정 (repetition penalty)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "과학 기술의 발전으로",
+       "max_length": 150,
+       "min_length": 30,
+       "do_sample": true,
+       "temperature": 0.7,
+       "top_p": 0.95,
+       "repetition_penalty": 1.1,
+       "length_penalty": 1.0,
+       "no_repeat_ngram_size": 3
+     }}'
+
+# 4. 조건부 생성 (prefix guidance)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "AI 기술:",
+       "max_length": 120,
+       "min_length": 40,
+       "do_sample": true,
+       "temperature": 0.6,
+       "top_p": 0.8,
+       "pad_token_id": 0,
+       "eos_token_id": 2,
+       "forced_eos_token_id": 2
+     }}'
+
+# 5. 빔 서치 생성 (beam search)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "기후 변화 대응을 위해",
+       "max_length": 100,
+       "min_length": 25,
+       "do_sample": false,
+       "num_beams": 5,
+       "num_return_sequences": 3,
+       "early_stopping": true,
+       "length_penalty": 1.2
+     }}'
+
+# 6. 제어된 생성 (stop sequences)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "질문: 우주의 크기는? 답변:",
+       "max_length": 80,
+       "min_length": 10,
+       "do_sample": true,
+       "temperature": 0.5,
+       "stop_sequences": ["질문:", "\\n\\n"],
+       "bad_words_ids": [],
+       "force_words_ids": []
+     }}'
+
+# 7. 스트리밍 생성 (실시간 출력)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -H "Accept: text/event-stream" \\
+     -d '{{
+       "text": "AI의 윤리적 고려사항은",
+       "max_length": 150,
+       "do_sample": true,
+       "temperature": 0.7,
+       "stream": true,
+       "include_stop_str_in_output": false
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "text2text-generation":
+                            st.code(f'''# 🔄 Text2Text 생성 - T5, BART, UL2, Flan-T5
+
+# 1. 기본 Text2Text 생성
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "translate English to Korean: Hello world",
+       "max_length": 128,
+       "min_length": 10,
+       "num_return_sequences": 1
+     }}'
+
+# 2. 다양한 T5 태스크
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "summarize: The quick brown fox jumps over the lazy dog...",
+       "max_length": 100,
+       "min_length": 20,
+       "do_sample": true,
+       "temperature": 0.8,
+       "top_p": 0.9
+     }}'
+
+# 3. 멀티태스크 처리
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "question: What is AI? context: Artificial intelligence is...",
+       "max_length": 64,
+       "num_beams": 4,
+       "early_stopping": true,
+       "length_penalty": 1.2
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "summarization":
+                            st.code(f'''# 📝 텍스트 요약 - Pegasus, LED, BART-Large
+
+# 1. 기본 요약
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "긴 문서 내용을 여기에 입력...",
+       "max_length": 150,
+       "min_length": 30,
+       "length_penalty": 2.0,
+       "num_beams": 4
+     }}'
+
+# 2. 고급 요약 (길이 제어)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "Very long article text...",
+       "max_length": 200,
+       "min_length": 50,
+       "length_penalty": 1.5,
+       "num_beams": 6,
+       "early_stopping": true,
+       "no_repeat_ngram_size": 3
+     }}'
+
+# 3. 배치 요약
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "texts": [
+         "First document to summarize...",
+         "Second document to summarize..."
+       ],
+       "max_length": 100,
+       "min_length": 20,
+       "num_beams": 3
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "translation":
+                            st.code(f'''# 🌍 번역 - Opus-MT, NLLB, Marian, M2M100
+
+# 1. 기본 번역
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "Hello, how are you?",
+       "src_lang": "en",
+       "tgt_lang": "ko",
+       "max_length": 128
+     }}'
+
+# 2. 다국어 번역 (NLLB)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "Bonjour, comment allez-vous?",
+       "src_lang": "fra_Latn",
+       "tgt_lang": "kor_Hang",
+       "max_length": 256,
+       "num_beams": 5,
+       "length_penalty": 1.0
+     }}'
+
+# 3. 배치 번역
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "texts": [
+         "Good morning!",
+         "How are you today?",
+         "Nice to meet you."
+       ],
+       "src_lang": "en",
+       "tgt_lang": "ko",
+       "max_length": 100
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "fill-mask":
+                            st.code(f'''# 🎭 Fill-Mask - BERT, RoBERTa, DeBERTa MLM
+
+# 1. 기본 마스크 채우기
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "Paris is the [MASK] of France.",
+       "top_k": 5
+     }}'
+
+# 2. 다중 마스크 처리
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "The [MASK] is very [MASK] today.",
+       "top_k": 3,
+       "targets": ["weather", "sunny"]
+     }}'
+
+# 3. 한국어 마스크 채우기
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "서울은 대한민국의 [MASK]이다.",
+       "top_k": 5,
+       "threshold": 0.1
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "multimodal":
+                            st.code(f'''# 🖼️ 멀티모달 - CLIP, BLIP, LayoutLM
+
+# 1. 이미지-텍스트 유사도 (CLIP)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "image": "base64_encoded_image_data",
+       "text": "a photo of a cat",
+       "task": "image-text-similarity"
+     }}'
+
+# 2. 이미지 캡션 생성 (BLIP)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "image": "base64_encoded_image_data",
+       "task": "image-captioning",
+       "max_length": 50,
+       "num_beams": 3
+     }}'
+
+# 3. 문서 이해 (LayoutLM)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "image": "base64_encoded_document_image",
+       "text": "Extract key information",
+       "task": "document-understanding",
+       "return_bbox": true
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "image-classification":
+                            st.code(f'''# 🖼️ 이미지 분류 - ViT, DeiT, Swin, ConvNeXT
+
+# 1. 기본 이미지 분류
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "image": "base64_encoded_image_data",
+       "top_k": 5
+     }}'
+
+# 2. 고급 이미지 분류 (확률 반환)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "image": "base64_encoded_image_data",
+       "return_all_scores": true,
+       "top_k": 10,
+       "threshold": 0.1
+     }}'
+
+# 3. 배치 이미지 분류
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "images": [
+         "base64_encoded_image_1",
+         "base64_encoded_image_2"
+       ],
+       "top_k": 3
+     }}'
+''', language='bash')
+                        
+                        elif model_type == "automatic-speech-recognition":
+                            st.code(f'''# 🎤 음성 인식 - Wav2Vec2, Whisper, SpeechT5
+
+# 1. 기본 음성 인식
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "audio": "base64_encoded_audio_data",
+       "sampling_rate": 16000
+     }}'
+
+# 2. 다국어 음성 인식 (Whisper)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "audio": "base64_encoded_audio_data",
+       "language": "korean",
+       "task": "transcribe",
+       "return_timestamps": true
+     }}'
+
+# 3. 음성 번역 (Whisper)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "audio": "base64_encoded_audio_data",
+       "task": "translate",
+       "target_language": "english",
+       "return_timestamps": true,
+       "chunk_length": 30
+     }}'
+''', language='bash')
+                        
+                        else:
+                            st.code(f'''# 🔧 기본 예측 API (모든 모델 타입 지원)
+
+# 1. 기본 예측
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{"text": "입력 텍스트를 여기에 넣으세요"}}'
+
+# 2. 파라미터가 있는 요청
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "입력 텍스트",
+       "max_length": 512,
+       "temperature": 0.7,
+       "top_p": 0.9,
+       "do_sample": true
+     }}'
+
+# 3. 멀티모달 입력 (이미지 + 텍스트)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "텍스트 입력",
+       "image": "base64_encoded_image_data",
+       "audio": "base64_encoded_audio_data",
+       "return_all_outputs": true
+     }}'
+''', language='bash')
+                    
+                    with tab2:
+                        # Python 예제
+                        if model_type == "text-classification":
+                            st.code(f'''import requests
+import json
+import asyncio
+import aiohttp
+from typing import List, Dict, Optional
+
+# 🏷️ 텍스트 분류/감정 분석 - 상세 파라미터 포함
+
+# 1. 기본 감정 분석 (기본 파라미터)
+def analyze_sentiment_basic(text: str) -> Dict:
+    """기본 감정 분석"""
+    data = {{
+        "text": text,
+        "return_all_scores": False,
+        "function_to_apply": "softmax"
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 2. 상세 분석 (모든 클래스 확률 반환)
+def analyze_sentiment_detailed(text: str, top_k: int = 3) -> Dict:
+    """모든 클래스 확률을 반환하는 상세 분석"""
+    data = {{
+        "text": text,
+        "return_all_scores": True,
+        "function_to_apply": "softmax",
+        "top_k": top_k
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 3. 배치 처리 (최적화된 다중 텍스트 처리)
+def analyze_sentiment_batch(texts: List[str], **kwargs) -> List[Dict]:
+    """배치 처리로 여러 텍스트 동시 분석"""
+    data = {{
+        "texts": texts,
+        "return_all_scores": True,
+        "function_to_apply": "softmax",
+        "truncation": True,
+        "max_length": 512,
+        **kwargs  # 추가 파라미터
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 4. 고급 분석 (DeBERTa/RoBERTa 최적화)
+def analyze_sentiment_advanced(text: str, confidence_threshold: float = 0.8) -> Dict:
+    """고급 파라미터를 사용한 정밀 분석"""
+    data = {{
+        "text": text,
+        "return_all_scores": True,
+        "function_to_apply": "softmax",
+        "truncation": True,
+        "max_length": 512,
+        "stride": 128,
+        "return_overflowing_tokens": True,
+        "padding": "max_length",
+        "threshold": confidence_threshold
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 5. 비동기 처리 (대용량 처리용)
+async def analyze_sentiment_async(session: aiohttp.ClientSession, text: str) -> Dict:
+    """비동기 감정 분석"""
+    data = {{
+        "text": text,
+        "return_all_scores": True,
+        "function_to_apply": "softmax"
+    }}
+    
+    async with session.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    ) as response:
+        return await response.json()
+
+async def analyze_batch_async(texts: List[str]) -> List[Dict]:
+    """비동기 배치 처리"""
+    async with aiohttp.ClientSession() as session:
+        tasks = [analyze_sentiment_async(session, text) for text in texts]
+        return await asyncio.gather(*tasks)
+
+# 6. 실전 사용 예제
+def main():
+    # 단일 텍스트 분석
+    text = "이 제품은 정말 훌륭합니다! 강력 추천해요."
+    result = analyze_sentiment_detailed(text)
+    
+    print(f"텍스트: {{text}}")
+    print(f"주요 감정: {{result['predictions'][0]['label']}}")
+    print(f"신뢰도: {{result['predictions'][0]['score']:.4f}}")
+    
+    # 배치 처리
+    texts = [
+        "좋은 제품이에요",
+        "별로 마음에 안들어요", 
+        "그냥 그래요",
+        "최고의 선택이었습니다!"
+    ]
+    
+    batch_results = analyze_sentiment_batch(texts)
+    
+    print("\\n배치 처리 결과:")
+    for i, text in enumerate(texts):
+        pred = batch_results['predictions'][i]
+        print(f"'{{text}}' -> {{pred['label']}} ({{pred['score']:.3f}})")
+    
+    # 신뢰도 필터링
+    high_confidence = [
+        (texts[i], batch_results['predictions'][i]) 
+        for i in range(len(texts))
+        if batch_results['predictions'][i]['score'] > 0.8
+    ]
+    
+    print(f"\\n고신뢰도 결과 (>0.8): {{len(high_confidence)}}개")
+    for text, pred in high_confidence:
+        print(f"  '{{text}}' -> {{pred['label']}} ({{pred['score']:.3f}})")
+
+# 7. 에러 처리 및 재시도
+def safe_analyze_sentiment(text: str, max_retries: int = 3, timeout: int = 30) -> Dict:
+    """에러 처리와 재시도 로직이 포함된 안전한 분석"""
+    for attempt in range(max_retries):
+        try:
+            data = {{
+                "text": text,
+                "return_all_scores": True,
+                "function_to_apply": "softmax"
+            }}
+            
+            response = requests.post(
+                "http://localhost:{model_port}/models/{model_name}/predict",
+                json=data,
+                timeout=timeout
+            )
+            response.raise_for_status()
+            return response.json()
+            
+        except requests.exceptions.Timeout:
+            if attempt == max_retries - 1:
+                return {{"error": f"요청 시간 초과 ({{max_retries}}회 시도)"}}
+            print(f"시간 초과, 재시도 {{attempt + 1}}/{{max_retries}}")
+            
+        except requests.exceptions.RequestException as e:
+            if attempt == max_retries - 1:
+                return {{"error": f"요청 실패: {{e}}"}}
+            print(f"요청 실패, 재시도 {{attempt + 1}}/{{max_retries}}: {{e}}")
+            
+        except Exception as e:
+            return {{"error": f"예상치 못한 오류: {{e}}"}}
+    
+    return {{"error": "최대 재시도 횟수 초과"}}
+
+# 사용 예제
+if __name__ == "__main__":
+    main()
+''', language='python')
+                        
+                        elif model_type == "token-classification":
+                            st.code(f'''import requests
+from collections import defaultdict
+
+# NER 분석 함수
+def extract_entities(text):
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json={{"text": text}}
+    )
+    return response.json()
+
+# 단일 텍스트 분석
+text = "김철수는 서울특별시에서 태어나 삼성전자에서 일하고 있다."
+result = extract_entities(text)
+
+print(f"원본 텍스트: {{text}}")
+print("\\n개체명 목록:")
+for entity in result['predictions']:
+    print(f"- {{entity['word']}}: {{entity['entity']}} ({{entity['score']:.3f}})")
+
+# 개체명 타입별 그룹화
+def group_entities_by_type(entities):
+    grouped = defaultdict(list)
+    for entity in entities:
+        grouped[entity['entity']].append(entity['word'])
+    return dict(grouped)
+
+entities = result['predictions']
+grouped = group_entities_by_type(entities)
+
+print("\\n타입별 개체명:")
+for entity_type, words in grouped.items():
+    print(f"- {{entity_type}}: {{', '.join(set(words))}}")
+
+# 여러 문서 배치 처리
+documents = [
+    "이순신 장군은 조선의 명장이었다.",
+    "애플은 캘리포니아에 본사를 두고 있다.",
+    "BTS는 한국의 대표적인 K-POP 그룹이다."
+]
+
+print("\\n배치 처리 결과:")
+for i, doc in enumerate(documents):
+    result = extract_entities(doc)
+    print(f"\\n문서 {{i+1}}: {{doc}}")
+    entities = group_entities_by_type(result['predictions'])
+    for entity_type, words in entities.items():
+        print(f"  {{entity_type}}: {{', '.join(set(words))}}")
+''', language='python')
+                        
+                        elif model_type == "feature-extraction":
+                            st.code(f'''import requests
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
+
+# 임베딩 추출 함수
+def get_embedding(text):
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json={{"text": text}}
+    )
+    result = response.json()
+    return np.array(result['predictions'])
+
+# 단일 텍스트 임베딩
+text = "안녕하세요, 반갑습니다!"
+embedding = get_embedding(text)
+print(f"텍스트: {{text}}")
+print(f"임베딩 크기: {{embedding.shape}}")
+print(f"임베딩 샘플: {{embedding[:5]}}")
+
+# 유사도 계산
+texts = [
+    "안녕하세요",
+    "반갑습니다", 
+    "날씨가 좋네요",
+    "Hello world"
+]
+
+embeddings = []
+for text in texts:
+    emb = get_embedding(text)
+    embeddings.append(emb)
+
+# 모든 텍스트 쌍의 유사도 계산
+print("\\n텍스트 간 유사도 매트릭스:")
+similarities = cosine_similarity(embeddings)
+
+for i, text1 in enumerate(texts):
+    for j, text2 in enumerate(texts):
+        if i < j:  # 중복 제거
+            sim = similarities[i][j]
+            print(f"'{{text1}}' vs '{{text2}}': {{sim:.3f}}")
+
+# 문서 클러스터링 예제
+def find_most_similar(query_text, document_texts, top_k=3):
+    query_emb = get_embedding(query_text)
+    doc_embeddings = [get_embedding(doc) for doc in document_texts]
+    
+    similarities = []
+    for doc_emb in doc_embeddings:
+        sim = cosine_similarity([query_emb], [doc_emb])[0][0]
+        similarities.append(sim)
+    
+    # 상위 k개 문서 반환
+    top_indices = np.argsort(similarities)[-top_k:][::-1]
+    
+    results = []
+    for idx in top_indices:
+        results.append({{
+            "document": document_texts[idx],
+            "similarity": similarities[idx]
+        }})
+    
+    return results
+
+# 사용 예제
+query = "인공지능 기술"
+documents = [
+    "머신러닝은 AI의 한 분야입니다",
+    "오늘 날씨가 맑습니다",
+    "딥러닝으로 이미지 인식을 합니다",
+    "점심 메뉴를 고르고 있어요"
+]
+
+similar_docs = find_most_similar(query, documents)
+print(f"\\n쿼리: '{{query}}'와 가장 유사한 문서들:")
+for doc in similar_docs:
+    print(f"- {{doc['similarity']:.3f}}: {{doc['document']}}")
+''', language='python')
+                        
+                        elif model_type == "text2text-generation":
+                            st.code('''import requests
+import json
+from typing import List, Dict, Optional
+
+# 🔄 Text2Text 생성 - T5, BART, UL2, Flan-T5 (상세 파라미터 포함)
+
+# 1. 기본 Text2Text 생성
+def text2text_generate(input_text: str, task_prefix: str = "") -> Dict:
+    """기본 Text2Text 생성"""
+    full_text = f"{{task_prefix}}: {{input_text}}" if task_prefix else input_text
+    
+    data = {{
+        "text": full_text,
+        "max_length": 128,
+        "min_length": 10,
+        "num_return_sequences": 1,
+        "do_sample": False,
+        "num_beams": 1,
+        "early_stopping": True
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 2. 다양한 T5 태스크 처리
+def handle_t5_tasks() -> None:
+    """T5 모델의 다양한 태스크 처리"""
+    
+    # 번역 태스크
+    translation_result = text2text_generate(
+        "Hello world, how are you?",
+        task_prefix="translate English to Korean"
+    )
+    print("번역 결과:", translation_result)
+    
+    # 요약 태스크
+    long_text = """
+    인공지능(AI)은 인간의 지능을 모방하여 학습, 추론, 문제해결 등의 능력을 갖춘 시스템입니다.
+    머신러닝과 딥러닝 기술의 발전으로 이미지 인식, 자연어 처리, 음성 인식 등 다양한 분야에서 활용되고 있습니다.
+    """
+    
+    summary_result = text2text_generate(
+        long_text.strip(),
+        task_prefix="summarize"
+    )
+    print("요약 결과:", summary_result)
+
+# 3. 고급 생성 파라미터
+def advanced_text2text_generate(input_text: str, task_prefix: str = "") -> Dict:
+    """고급 파라미터를 사용한 생성"""
+    full_text = f"{{task_prefix}}: {{input_text}}" if task_prefix else input_text
+    
+    data = {{
+        "text": full_text,
+        "max_length": 100,
+        "min_length": 20,
+        "num_return_sequences": 3,
+        "do_sample": True,
+        "temperature": 0.8,
+        "top_p": 0.9,
+        "top_k": 50,
+        "num_beams": 4,
+        "early_stopping": True,
+        "length_penalty": 1.2,
+        "repetition_penalty": 1.1,
+        "no_repeat_ngram_size": 2
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 사용 예제
+if __name__ == "__main__":
+    # 기본 사용
+    result = text2text_generate("Hello world", "translate English to Korean")
+    print("기본 결과:", result)
+    
+    # 고급 사용
+    handle_t5_tasks()
+''', language='python')
+                        
+                        elif model_type == "summarization":
+                            st.code(f'''import requests
+import json
+from typing import List, Dict, Optional
+
+# 📝 텍스트 요약 - Pegasus, LED, BART-Large (상세 파라미터 포함)
+
+# 1. 기본 요약 함수
+def summarize_text(text: str, max_length: int = 150, min_length: int = 30) -> Dict:
+    """기본 텍스트 요약"""
+    data = {{
+        "text": text,
+        "max_length": max_length,
+        "min_length": min_length,
+        "length_penalty": 2.0,
+        "num_beams": 4,
+        "early_stopping": True,
+        "do_sample": False
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 2. 고급 요약 (다양한 파라미터)
+def advanced_summarize(text: str, summary_type: str = "balanced") -> Dict:
+    """다양한 요약 스타일"""
+    
+    if summary_type == "extractive":
+        # 추출적 요약 (원문 구문 유지)
+        data = {{
+            "text": text,
+            "max_length": 100,
+            "min_length": 50,
+            "length_penalty": 1.0,
+            "num_beams": 6,
+            "early_stopping": True,
+            "do_sample": False,
+            "repetition_penalty": 1.2
+        }}
+    elif summary_type == "abstractive":
+        # 추상적 요약 (의미 기반 재구성)
+        data = {{
+            "text": text,
+            "max_length": 120,
+            "min_length": 40,
+            "length_penalty": 1.5,
+            "num_beams": 4,
+            "do_sample": True,
+            "temperature": 0.8,
+            "top_p": 0.9,
+            "repetition_penalty": 1.1
+        }}
+    else:  # balanced
+        # 균형잡힌 요약
+        data = {{
+            "text": text,
+            "max_length": 130,
+            "min_length": 35,
+            "length_penalty": 1.8,
+            "num_beams": 5,
+            "early_stopping": True,
+            "do_sample": False
+        }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 사용 예제
+if __name__ == "__main__":
+    sample_text = """
+    인공지능(AI)은 인간의 지능을 모방하여 학습, 추론, 문제해결 등의 능력을 갖춘 시스템입니다.
+    머신러닝과 딥러닝 기술의 발전으로 이미지 인식, 자연어 처리, 음성 인식 등 다양한 분야에서 활용되고 있습니다.
+    """
+    
+    # 기본 요약
+    basic_result = summarize_text(sample_text)
+    print("기본 요약:", basic_result)
+    
+    # 고급 요약
+    advanced_result = advanced_summarize(sample_text, "abstractive")
+    print("고급 요약:", advanced_result)
+''', language='python')
+                        
+                        elif model_type == "translation":
+                            st.code(f'''import requests
+import json
+from typing import List, Dict, Optional
+
+# 🌐 번역 - MarianMT, NLLB, M2M100, Opus-MT (상세 파라미터 포함)
+
+# 1. 기본 번역 함수
+def translate_text(text: str, source_lang: str = "en", target_lang: str = "ko") -> Dict:
+    """기본 텍스트 번역"""
+    
+    # 언어 쌍에 따른 프롬프트 구성
+    prompt = f"translate {{source_lang}} to {{target_lang}}: {{text}}"
+    
+    data = {{
+        "text": prompt,
+        "max_length": 512,
+        "num_beams": 5,
+        "early_stopping": True,
+        "length_penalty": 1.0,
+        "do_sample": False
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 2. 다중 언어 번역
+def multi_language_translate(text: str, target_languages: List[str] = ["ko", "ja", "zh"]) -> Dict[str, Dict]:
+    """하나의 텍스트를 여러 언어로 번역"""
+    results = {{}}
+    
+    for lang in target_languages:
+        try:
+            result = translate_text(text, source_lang="en", target_lang=lang)
+            results[lang] = result
+        except Exception as e:
+            results[lang] = {{"error": str(e)}}
+    
+    return results
+
+# 3. 고급 번역 파라미터
+def advanced_translate(text: str, source_lang: str = "en", target_lang: str = "ko", 
+                      translation_style: str = "formal") -> Dict:
+    """고급 파라미터를 사용한 번역"""
+    
+    if translation_style == "formal":
+        data = {{
+            "text": f"translate {{source_lang}} to {{target_lang}}: {{text}}",
+            "max_length": 512,
+            "num_beams": 6,
+            "early_stopping": True,
+            "length_penalty": 1.2,
+            "repetition_penalty": 1.1,
+            "do_sample": False
+        }}
+    elif translation_style == "casual":
+        data = {{
+            "text": f"translate {{source_lang}} to {{target_lang}}: {{text}}",
+            "max_length": 512,
+            "num_beams": 4,
+            "do_sample": True,
+            "temperature": 0.8,
+            "top_p": 0.9,
+            "length_penalty": 1.0
+        }}
+    else:  # balanced
+        data = {{
+            "text": f"translate {{source_lang}} to {{target_lang}}: {{text}}",
+            "max_length": 512,
+            "num_beams": 5,
+            "early_stopping": True,
+            "length_penalty": 1.0
+        }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 사용 예제
+if __name__ == "__main__":
+    # 기본 번역
+    english_text = "Hello, how are you today?"
+    basic_result = translate_text(english_text, "en", "ko")
+    print("기본 번역:", basic_result)
+    
+    # 다중 언어 번역
+    multi_result = multi_language_translate(english_text, ["ko", "ja"])
+    print("다중 언어 번역:", multi_result)
+''', language='python')
+                        
+                        elif model_type == "fill-mask":
+                            st.code(f'''import requests
+import json
+from typing import List, Dict, Optional
+
+# 🎭 Fill-Mask - BERT, RoBERTa, DeBERTa, ELECTRA (상세 파라미터 포함)
+
+# 1. 기본 마스크 채우기
+def fill_mask_basic(text: str, mask_token: str = "[MASK]") -> Dict:
+    """기본 마스크 채우기"""
+    data = {{
+        "text": text,
+        "top_k": 5,
+        "temperature": 1.0,
+        "return_tensors": False
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 2. 고급 마스크 채우기
+def fill_mask_advanced(text: str, top_k: int = 10, temperature: float = 1.0,
+                      min_score: float = 0.01) -> Dict:
+    """고급 파라미터를 사용한 마스크 채우기"""
+    data = {{
+        "text": text,
+        "top_k": top_k,
+        "temperature": temperature,
+        "min_score": min_score,
+        "return_tensors": False,
+        "return_all_scores": False
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 3. 다중 마스크 처리
+def multiple_mask_fill(text: str, top_k: int = 5) -> Dict:
+    """여러 마스크를 동시에 처리"""
+    
+    # 마스크 개수 확인
+    mask_count = text.count("[MASK]")
+    
+    if mask_count == 0:
+        return {{"error": "No [MASK] token found in text"}}
+    
+    data = {{
+        "text": text,
+        "top_k": top_k,
+        "temperature": 1.0,
+        "handle_multiple_masks": True
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    
+    result = response.json()
+    result["mask_count"] = mask_count
+    return result
+
+# 사용 예제
+if __name__ == "__main__":
+    # 기본 마스크 채우기
+    text1 = "서울은 대한민국의 [MASK]입니다."
+    basic_result = fill_mask_basic(text1)
+    print("기본 마스크 채우기:", basic_result)
+    
+    # 고급 마스크 채우기
+    text2 = "인공지능은 [MASK] 기술입니다."
+    advanced_result = fill_mask_advanced(text2, top_k=8, temperature=1.2)
+    print("고급 마스크 채우기:", advanced_result)
+    
+    # 다중 마스크 처리
+    text3 = "[MASK]는 [MASK]에서 개발된 언어 모델입니다."
+    multi_result = multiple_mask_fill(text3)
+    print("다중 마스크 처리:", multi_result)
+''', language='python')
+                        
+                        elif model_type == "multimodal":
+                            st.code(f'''import requests
+import json
+import base64
+from typing import List, Dict, Optional, Union
+from io import BytesIO
+from PIL import Image
+
+# 🎨 멀티모달 모델 - CLIP, BLIP, LayoutLM (상세 파라미터 포함)
+
+# 1. 이미지 전처리 유틸리티
+def encode_image_to_base64(image_path: str) -> str:
+    """이미지를 Base64로 인코딩"""
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+def prepare_image_data(image_input: Union[str, bytes, Image.Image]) -> str:
+    """다양한 이미지 입력을 Base64로 변환"""
+    if isinstance(image_input, str):
+        # 파일 경로
+        return encode_image_to_base64(image_input)
+    elif isinstance(image_input, bytes):
+        # 바이트 데이터
+        return base64.b64encode(image_input).decode('utf-8')
+    elif isinstance(image_input, Image.Image):
+        # PIL Image 객체
+        buffer = BytesIO()
+        image_input.save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode('utf-8')
+    else:
+        raise ValueError("Unsupported image input type")
+
+# 2. 이미지-텍스트 유사도 계산 (CLIP)
+def image_text_similarity(image_path: str, texts: List[str]) -> Dict:
+    """이미지와 텍스트 간 유사도 계산"""
+    
+    image_data = prepare_image_data(image_path)
+    
+    data = {{
+        "image": image_data,
+        "texts": texts,
+        "normalize": True,
+        "temperature": 0.01,
+        "return_similarity_matrix": True
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 3. 이미지 캡셔닝 (BLIP)
+def generate_image_caption(image_path: str, max_length: int = 50, 
+                         num_captions: int = 1) -> Dict:
+    """이미지에 대한 캡션 생성"""
+    
+    image_data = prepare_image_data(image_path)
+    
+    data = {{
+        "image": image_data,
+        "task": "image_captioning",
+        "max_length": max_length,
+        "min_length": 10,
+        "num_return_sequences": num_captions,
+        "num_beams": 5,
+        "early_stopping": True,
+        "temperature": 0.8,
+        "do_sample": True if num_captions > 1 else False
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 4. 시각적 질문 답변 (VQA)
+def visual_question_answering(image_path: str, question: str) -> Dict:
+    """이미지 기반 질문 답변"""
+    
+    image_data = prepare_image_data(image_path)
+    
+    data = {{
+        "image": image_data,
+        "question": question,
+        "task": "visual_question_answering",
+        "max_length": 50,
+        "num_beams": 4,
+        "early_stopping": True,
+        "confidence_threshold": 0.5
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 사용 예제
+if __name__ == "__main__":
+    # 샘플 이미지 경로 (실제 사용시 적절한 경로로 변경)
+    sample_image = "/path/to/sample_image.jpg"
+    
+    # 이미지 캡셔닝
+    caption_result = generate_image_caption(sample_image, max_length=50)
+    print("이미지 캡션:", caption_result)
+    
+    # 이미지-텍스트 유사도
+    similarity_result = image_text_similarity(
+        sample_image, 
+        ["a beautiful landscape", "a person", "an animal", "a building"]
+    )
+    print("유사도 결과:", similarity_result)
+    
+    # 시각적 질문 답변
+    vqa_result = visual_question_answering(sample_image, "What is in this image?")
+    print("VQA 결과:", vqa_result)
+''', language='python')
+                        
+                        elif model_type == "image-classification":
+                            st.code(f'''import requests
+import json
+import base64
+from typing import List, Dict, Optional, Union
+from io import BytesIO
+from PIL import Image
+
+# 🖼️ 이미지 분류 - ViT, DeiT, Swin, ConvNeXT (상세 파라미터 포함)
+
+# 1. 이미지 전처리 유틸리티
+def encode_image_to_base64(image_path: str) -> str:
+    """이미지를 Base64로 인코딩"""
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+def prepare_image_data(image_input: Union[str, bytes, Image.Image]) -> str:
+    """다양한 이미지 입력을 Base64로 변환"""
+    if isinstance(image_input, str):
+        # 파일 경로
+        return encode_image_to_base64(image_input)
+    elif isinstance(image_input, bytes):
+        # 바이트 데이터
+        return base64.b64encode(image_input).decode('utf-8')
+    elif isinstance(image_input, Image.Image):
+        # PIL Image 객체
+        buffer = BytesIO()
+        image_input.save(buffer, format="PNG")
+        return base64.b64encode(buffer.getvalue()).decode('utf-8')
+    else:
+        raise ValueError("Unsupported image input type")
+
+# 2. 기본 이미지 분류
+def classify_image_basic(image_path: str, top_k: int = 5) -> Dict:
+    """기본 이미지 분류"""
+    
+    image_data = prepare_image_data(image_path)
+    
+    data = {{
+        "image": image_data,
+        "top_k": top_k,
+        "return_all_scores": False,
+        "confidence_threshold": 0.01
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 3. 고급 이미지 분류
+def classify_image_advanced(image_path: str, top_k: int = 10, 
+                          confidence_threshold: float = 0.1,
+                          return_probabilities: bool = True) -> Dict:
+    """고급 파라미터를 사용한 이미지 분류"""
+    
+    image_data = prepare_image_data(image_path)
+    
+    data = {{
+        "image": image_data,
+        "top_k": top_k,
+        "confidence_threshold": confidence_threshold,
+        "return_all_scores": return_probabilities,
+        "normalize_scores": True,
+        "temperature": 1.0
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 4. 배치 이미지 분류
+def batch_classify_images(image_paths: List[str], top_k: int = 3) -> List[Dict]:
+    """여러 이미지를 배치로 분류"""
+    
+    results = []
+    
+    for image_path in image_paths:
+        try:
+            result = classify_image_basic(image_path, top_k)
+            result["image_path"] = image_path
+            results.append(result)
+        except Exception as e:
+            results.append({{
+                "image_path": image_path,
+                "error": str(e)
+            }})
+    
+    return results
+
+# 사용 예제
+if __name__ == "__main__":
+    # 샘플 이미지 경로 (실제 사용시 적절한 경로로 변경)
+    sample_image = "/path/to/sample_image.jpg"
+    
+    # 기본 분류
+    basic_result = classify_image_basic(sample_image, top_k=5)
+    print("기본 분류:", basic_result)
+    
+    # 고급 분류
+    advanced_result = classify_image_advanced(sample_image, top_k=10, confidence_threshold=0.1)
+    print("고급 분류:", advanced_result)
+    
+    # 배치 처리
+    image_list = [sample_image]  # 실제로는 여러 이미지 경로
+    batch_result = batch_classify_images(image_list, top_k=3)
+    print("배치 분류:", batch_result)
+''', language='python')
+                        
+                        elif model_type == "automatic-speech-recognition":
+                            st.code(f'''import requests
+import json
+import base64
+import wave
+from typing import List, Dict, Optional
+
+# 🎤 음성 인식 - Wav2Vec2, Whisper, SpeechT5 (상세 파라미터 포함)
+
+# 1. 오디오 전처리 유틸리티
+def encode_audio_to_base64(audio_path: str) -> str:
+    """오디오 파일을 Base64로 인코딩"""
+    with open(audio_path, "rb") as audio_file:
+        return base64.b64encode(audio_file.read()).decode('utf-8')
+
+def get_audio_info(audio_path: str) -> Dict:
+    """오디오 파일 정보 추출"""
+    try:
+        with wave.open(audio_path, 'rb') as wav_file:
+            frames = wav_file.getnframes()
+            sample_rate = wav_file.getframerate()
+            duration = frames / sample_rate
+            channels = wav_file.getnchannels()
+            
+            return {{
+                "duration": duration,
+                "sample_rate": sample_rate,
+                "channels": channels,
+                "frames": frames,
+                "format": "WAV"
+            }}
+    except Exception as e:
+        return {{"error": f"Could not read audio file: {{e}}"}}
+
+# 2. 기본 음성 인식
+def transcribe_audio_basic(audio_path: str) -> Dict:
+    """기본 음성 인식"""
+    
+    audio_data = encode_audio_to_base64(audio_path)
+    audio_info = get_audio_info(audio_path)
+    
+    data = {{
+        "audio": audio_data,
+        "return_timestamps": False,
+        "language": "auto",
+        "task": "transcribe"
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    
+    result = response.json()
+    result["audio_info"] = audio_info
+    return result
+
+# 3. 고급 음성 인식 (Whisper)
+def transcribe_audio_advanced(audio_path: str, language: str = "auto",
+                            return_timestamps: bool = True,
+                            task: str = "transcribe") -> Dict:
+    """고급 파라미터를 사용한 음성 인식"""
+    
+    audio_data = encode_audio_to_base64(audio_path)
+    
+    data = {{
+        "audio": audio_data,
+        "language": language,
+        "task": task,  # transcribe or translate
+        "return_timestamps": return_timestamps,
+        "word_timestamps": True,
+        "no_speech_threshold": 0.6,
+        "temperature": 0.0,
+        "beam_size": 5,
+        "patience": 1.0,
+        "length_penalty": 1.0
+    }}
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 4. 배치 음성 인식
+def batch_transcribe_audio(audio_paths: List[str], 
+                         language: str = "auto") -> List[Dict]:
+    """여러 오디오 파일을 배치로 인식"""
+    
+    results = []
+    
+    for audio_path in audio_paths:
+        try:
+            result = transcribe_audio_advanced(
+                audio_path, 
+                language=language,
+                return_timestamps=True
+            )
+            result["audio_path"] = audio_path
+            results.append(result)
+        except Exception as e:
+            results.append({{
+                "audio_path": audio_path,
+                "error": str(e)
+            }})
+    
+    return results
+
+# 사용 예제
+if __name__ == "__main__":
+    # 샘플 오디오 파일 경로 (실제 사용시 적절한 경로로 변경)
+    sample_audio = "/path/to/sample_audio.wav"
+    
+    # 기본 음성 인식
+    basic_result = transcribe_audio_basic(sample_audio)
+    print("기본 인식:", basic_result)
+    
+    # 고급 음성 인식
+    advanced_result = transcribe_audio_advanced(
+        sample_audio, 
+        language="ko",
+        return_timestamps=True
+    )
+    print("고급 인식:", advanced_result)
+    
+    # 배치 처리
+    audio_list = [sample_audio]  # 실제로는 여러 오디오 파일
+    batch_result = batch_transcribe_audio(audio_list, "ko")
+    print("배치 인식:", batch_result)
+''', language='python')
+
+                        else:
+                            st.code(f'''import requests
+import asyncio
+import aiohttp
+
+# 기본 예측 함수
+def predict(text, **kwargs):
+    data = {{"text": text}}
+    data.update(kwargs)  # 추가 파라미터
+    
+    response = requests.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    )
+    return response.json()
+
+# 기본 사용
+result = predict("입력 텍스트를 여기에 넣으세요")
+print(result)
+
+# 파라미터가 있는 사용
+result = predict(
+    "입력 텍스트",
+    max_length=100,
+    temperature=0.8,
+    top_p=0.9
+)
+
+# 비동기 처리 (대량 요청시 유용)
+async def predict_async(session, text):
+    data = {{"text": text}}
+    async with session.post(
+        "http://localhost:{model_port}/models/{model_name}/predict",
+        json=data
+    ) as response:
+        return await response.json()
+
+async def batch_predict(texts):
+    async with aiohttp.ClientSession() as session:
+        tasks = [predict_async(session, text) for text in texts]
+        results = await asyncio.gather(*tasks)
+        return results
+
+# 배치 처리 사용
+texts = ["첫 번째 텍스트", "두 번째 텍스트", "세 번째 텍스트"]
+# results = asyncio.run(batch_predict(texts))
+''', language='python')
+                    
+                    with tab3:
+                        # JavaScript 예제
+                        st.code(f'''// Node.js / Browser JavaScript
+
+// 기본 예측 함수
+async function predict(text, options = {{}}) {{
+    const data = {{ text, ...options }};
+    
+    try {{
+        const response = await fetch(
+            'http://localhost:{model_port}/models/{model_name}/predict',
+            {{
+                method: 'POST',
+                headers: {{
+                    'Content-Type': 'application/json',
+                }},
+                body: JSON.stringify(data)
+            }}
+        );
+        
+        if (!response.ok) {{
+            throw new Error(`HTTP error! status: ${{response.status}}`);
+        }}
+        
+        return await response.json();
+    }} catch (error) {{
+        console.error('예측 요청 실패:', error);
+        throw error;
+    }}
+}}
+
+// 사용 예제
+predict("안녕하세요!")
+    .then(result => {{
+        console.log('예측 결과:', result.predictions);
+    }})
+    .catch(error => {{
+        console.error('에러:', error);
+    }});
+
+// React 컴포넌트 예제
+function ModelPredictor() {{
+    const [text, setText] = useState('');
+    const [result, setResult] = useState(null);
+    const [loading, setLoading] = useState(false);
+    
+    const handlePredict = async () => {{
+        setLoading(true);
+        try {{
+            const response = await predict(text);
+            setResult(response.predictions);
+        }} catch (error) {{
+            console.error('예측 실패:', error);
+        }} finally {{
+            setLoading(false);
+        }}
+    }};
+    
+    return (
+        <div>
+            <textarea 
+                value={{text}}
+                onChange={{(e) => setText(e.target.value)}}
+                placeholder="텍스트를 입력하세요"
+            />
+            <button onClick={{handlePredict}} disabled={{loading}}>
+                {{loading ? '처리 중...' : '예측하기'}}
+            </button>
+            {{result && (
+                <div>
+                    <h3>결과:</h3>
+                    <pre>{{JSON.stringify(result, null, 2)}}</pre>
+                </div>
+            )}}
+        </div>
+    );
+}}
+
+// 배치 처리
+async function batchPredict(texts) {{
+    const promises = texts.map(text => predict(text));
+    try {{
+        const results = await Promise.all(promises);
+        return results;
+    }} catch (error) {{
+        console.error('배치 처리 실패:', error);
+        throw error;
+    }}
+}}
+
+// 사용 예제
+const texts = ['첫 번째 텍스트', '두 번째 텍스트'];
+batchPredict(texts).then(results => {{
+    results.forEach((result, index) => {{
+        console.log(`텍스트 ${{index + 1}} 결과:`, result.predictions);
+    }});
+}});
+''', language='javascript')
+                    
+                    with tab4:
+                        # 고급 사용법
+                        st.code(f'''# 고급 파라미터 및 설정
+
+## 1. 타임아웃 설정
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -H "X-Request-Timeout: 60" \\
+     -d '{{"text": "긴 텍스트 처리용"}}'
+
+## 2. 배치 요청 (여러 텍스트 동시 처리)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "texts": [
+         "첫 번째 텍스트",
+         "두 번째 텍스트", 
+         "세 번째 텍스트"
+       ]
+     }}'
+
+## 3. 스트리밍 응답 (긴 생성 작업용)
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -H "Accept: text/event-stream" \\
+     -d '{{"text": "스트리밍 생성", "stream": true}}'
+
+## 4. 모델별 고급 파라미터
+
+### 텍스트 생성 모델
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "시작 텍스트",
+       "max_length": 200,
+       "min_length": 50,
+       "temperature": 0.8,
+       "top_p": 0.9,
+       "top_k": 50,
+       "do_sample": true,
+       "repetition_penalty": 1.1,
+       "no_repeat_ngram_size": 2
+     }}'
+
+### 분류 모델
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "분류할 텍스트",
+       "return_all_scores": true,
+       "top_k": 5
+     }}'
+
+### NER 모델  
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{{
+       "text": "개체명을 찾을 텍스트",
+       "aggregation_strategy": "simple",
+       "ignore_labels": ["O"],
+       "threshold": 0.5
+     }}'
+
+## 5. 모니터링 및 디버깅
+curl -X GET "http://localhost:{model_port}/models/{model_name}/status"
+curl -X GET "http://localhost:{model_port}/models/{model_name}/config"
+curl -X GET "http://localhost:{model_port}/system/metrics"
+
+## 6. 에러 처리 및 재시도
+curl -X POST "http://localhost:{model_port}/models/{model_name}/predict" \\
+     -H "Content-Type: application/json" \\
+     -H "X-Retry-Count: 3" \\
+     -H "X-Retry-Delay: 1000" \\
+     -d '{{"text": "재시도가 필요할 수 있는 요청"}}'
+''', language='bash')
+                    
+                    st.markdown("---")
+            
+            else:
+                st.info("💡 **로드된 모델이 없습니다.** 먼저 모델을 로드하면 해당 모델의 상세한 API 사용 예제가 표시됩니다.")
+                
+                # 일반적인 모델 타입별 빠른 참조 가이드
+                st.markdown("""
+                ### 📚 모델 타입별 빠른 참조 가이드
+                
+                아래는 일반적인 모델 타입별 기본 사용법입니다. 실제 모델을 로드하면 더 상세한 예제를 확인할 수 있습니다.
+                """)
+                
+                # 탭으로 구분된 타입별 예제
+                type_tab1, type_tab2, type_tab3, type_tab4 = st.tabs(["🏷️ 분류", "🏷️ NER", "🔍 임베딩", "🤖 생성"])
+                
+                with type_tab1:
+                    st.markdown("""
+                    #### 텍스트 분류 / 감정 분석 (BERT, RoBERTa, DeBERTa)
+                    """)
+                    st.code('''# 한국어 감정 분석
+curl -X POST "http://localhost:8000/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"text": "이 제품은 정말 훌륭합니다!"}'
+
+# 영어 감정 분석
+curl -X POST "http://localhost:8000/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"text": "This product is amazing!"}'
+
+# 주제 분류
+curl -X POST "http://localhost:8000/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"text": "오늘 주식 시장이 크게 상승했습니다."}'
+''', language='bash')
+                
+                with type_tab2:
+                    st.markdown("""
+                    #### 개체명 인식 (ELECTRA, KoBERT)
+                    """)
+                    st.code('''# 한국어 NER
+curl -X POST "http://localhost:8001/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"text": "김철수는 서울에서 삼성전자에 다닙니다."}'
+
+# 영어 NER
+curl -X POST "http://localhost:8001/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"text": "John Smith works at Google in New York."}'
+
+# 복합 개체명
+curl -X POST "http://localhost:8001/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"text": "2024년 1월 15일 애플이 새로운 제품을 발표했다."}'
+''', language='bash')
+                
+                with type_tab3:
+                    st.markdown("""
+                    #### 임베딩 추출 (BGE, Sentence-BERT)
+                    """)
+                    st.code('''# 텍스트 임베딩
+curl -X POST "http://localhost:8002/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"text": "임베딩을 추출할 텍스트"}'
+
+# 문서 임베딩
+curl -X POST "http://localhost:8002/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"text": "긴 문서의 내용을 벡터로 변환합니다..."}'
+
+# 배치 임베딩
+curl -X POST "http://localhost:8002/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"texts": ["문장1", "문장2", "문장3"]}'
+''', language='bash')
+                
+                with type_tab4:
+                    st.markdown("""
+                    #### 텍스트 생성 (GPT, BART)
+                    """)
+                    st.code('''# 기본 텍스트 생성
+curl -X POST "http://localhost:8003/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"text": "인공지능의 미래는", "max_length": 100}'
+
+# 창의적 글쓰기
+curl -X POST "http://localhost:8003/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"text": "옛날 옛적에", "temperature": 0.8, "do_sample": true}'
+
+# 질문 답변
+curl -X POST "http://localhost:8003/models/model-name/predict" \\
+     -H "Content-Type: application/json" \\
+     -d '{"question": "AI란 무엇인가?", "context": "인공지능 관련 문서..."}'
+''', language='bash')
         
         # 시스템 관리 엔드포인트
         with st.expander("🔧 시스템 관리 API", expanded=False):
