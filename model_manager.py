@@ -91,7 +91,7 @@ class MultiModelManager:
             if self._is_huggingface_model_id(model_path):
                 actual_model_path = self._download_huggingface_model(model_path)
             
-            analysis = self.model_analyzer.analyze_model_directory(actual_model_path)
+            analysis = self.model_analyzer.analyze_model_directory(actual_model_path, model_name)
             analysis['original_path'] = model_path
             analysis['actual_path'] = actual_model_path
             return analysis
@@ -359,8 +359,24 @@ class MultiModelManager:
                             
                             print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 1/4: Config 기반 빈 모델 생성")
                             
-                            # 모델 타입별 동적 클래스 선택
-                            model_type = config.model_type.lower()
+                            # Config 재로딩 (ULTRA 섹션에서 사용)
+                            try:
+                                from transformers import AutoConfig
+                                config = AutoConfig.from_pretrained(actual_model_path, local_files_only=True)
+                                model_type = config.model_type.lower()
+                                print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Config 재로딩 성공: {model_type}")
+                            except Exception as config_error:
+                                print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Config 재로딩 실패: {config_error}")
+                                # 기본값 사용
+                                if 'deberta-v2' in model_name.lower():
+                                    model_type = "deberta-v2"
+                                elif 'deberta' in model_name.lower():
+                                    model_type = "deberta"
+                                else:
+                                    model_type = "unknown"
+                                print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 추정된 모델 타입: {model_type}")
+                                config = None
+                            
                             print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 감지된 모델 타입: {model_type}")
                             
                             if model_type == "xlm-roberta":
@@ -385,9 +401,39 @@ class MultiModelManager:
                                 from transformers import RobertaModel
                                 model = RobertaModel(config)
                                 print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - RobertaModel 초기화 완료")
+                            elif model_type == "deberta-v2":
+                                # DeBERTa-v2 최적화된 로딩 (CRITICAL FIX)
+                                if self._should_use_classification_model(model_name):
+                                    from transformers import DebertaV2ForSequenceClassification
+                                    model = DebertaV2ForSequenceClassification(config)
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DebertaV2ForSequenceClassification 초기화 완료 (분류용)")
+                                else:
+                                    from transformers import DebertaV2Model
+                                    model = DebertaV2Model(config)
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DebertaV2Model 초기화 완료 (기본용)")
+                            elif model_type == "deberta":
+                                # DeBERTa (v1) 지원
+                                if self._should_use_classification_model(model_name):
+                                    from transformers import DebertaForSequenceClassification
+                                    model = DebertaForSequenceClassification(config)
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DebertaForSequenceClassification 초기화 완료 (분류용)")
+                                else:
+                                    from transformers import DebertaModel
+                                    model = DebertaModel(config)
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DebertaModel 초기화 완료 (기본용)")
+                            elif model_type == "electra":
+                                # ELECTRA 지원
+                                if self._should_use_classification_model(model_name):
+                                    from transformers import ElectraForSequenceClassification
+                                    model = ElectraForSequenceClassification(config)
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - ElectraForSequenceClassification 초기화 완료 (분류용)")
+                                else:
+                                    from transformers import ElectraModel
+                                    model = ElectraModel(config)
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - ElectraModel 초기화 완료 (기본용)")
                             else:
                                 # 범용 AutoModel 사용 (더 느리지만 안전)
-                                print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 알 수 없는 모델 타입, AutoModel 사용")
+                                print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 알 수 없는 모델 타입 ({model_type}), AutoModel 사용")
                                 from transformers import AutoModel
                                 model = AutoModel.from_config(config)
                                 print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - AutoModel 초기화 완료")
@@ -406,6 +452,13 @@ class MultiModelManager:
                             elif model_type == "xlm-roberta":
                                 # XLM-RoBERTa는 큰 모델이므로 적당한 스레드 수
                                 thread_count = min(4, os.cpu_count())
+                            elif model_type in ["deberta-v2", "deberta"]:
+                                # DeBERTa 모델들은 중대형 모델이므로 보수적 스레드 설정
+                                thread_count = min(4, os.cpu_count())
+                                print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DeBERTa 최적화: {model_type} 모델용 스레드 수 조정")
+                            elif model_type == "electra":
+                                # ELECTRA 모델들은 중형 모델
+                                thread_count = min(5, os.cpu_count())
                             else:
                                 # 기타 모델들은 보수적 설정
                                 thread_count = min(3, os.cpu_count())
@@ -467,6 +520,10 @@ class MultiModelManager:
                             print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - ❌ ULTRA 로딩 실패: {ultra_error}")
                             print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 오류 타입: {type(ultra_error).__name__}")
                             
+                            # 오류 변수 초기화
+                            fallback1_error = None
+                            fallback2_error = None
+                            
                             # ULTRA 실패 시 보조 방법들 시도
                             print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 보조 방법 1: 메모리 매핑 없이 재시도")
                             try:
@@ -481,7 +538,7 @@ class MultiModelManager:
                                     from safetensors.torch import load_file
                                     state_dict = load_file(safetensors_path, device='cpu')
                                 
-                                # 모델 타입별 동적 클래스 선택 (fallback 1)
+                                # 모델 타입별 동적 클래스 선택 (fallback 1) - Enhanced with DeBERTa support
                                 if model_type == "xlm-roberta":
                                     from transformers import XLMRobertaModel
                                     model = XLMRobertaModel(config)
@@ -499,6 +556,32 @@ class MultiModelManager:
                                 elif model_type == "roberta":
                                     from transformers import RobertaModel
                                     model = RobertaModel(config)
+                                elif model_type == "deberta-v2":
+                                    # DeBERTa-v2 fallback 1 지원 (CRITICAL FIX)
+                                    if self._should_use_classification_model(model_name):
+                                        from transformers import DebertaV2ForSequenceClassification
+                                        model = DebertaV2ForSequenceClassification(config)
+                                        print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DeBERTa-v2 분류 모델 (fallback 1)")
+                                    else:
+                                        from transformers import DebertaV2Model
+                                        model = DebertaV2Model(config)
+                                        print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DeBERTa-v2 기본 모델 (fallback 1)")
+                                elif model_type == "deberta":
+                                    # DeBERTa (v1) fallback 1 지원
+                                    if self._should_use_classification_model(model_name):
+                                        from transformers import DebertaForSequenceClassification
+                                        model = DebertaForSequenceClassification(config)
+                                    else:
+                                        from transformers import DebertaModel
+                                        model = DebertaModel(config)
+                                elif model_type == "electra":
+                                    # ELECTRA fallback 1 지원
+                                    if self._should_use_classification_model(model_name):
+                                        from transformers import ElectraForSequenceClassification
+                                        model = ElectraForSequenceClassification(config)
+                                    else:
+                                        from transformers import ElectraModel
+                                        model = ElectraModel(config)
                                 else:
                                     # 범용 AutoModel 사용
                                     from transformers import AutoModel
@@ -517,8 +600,26 @@ class MultiModelManager:
                             # 보조 방법 2: 전통적 transformers 로딩 (최후 수단)
                             print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 보조 방법 2: 전통적 transformers 로딩 (최후 수단)")
                             try:
-                                # 모델 타입 다시 확인 (fallback에서 사용)
-                                model_type = config.model_type.lower()
+                                # Config 재로딩 (fallback에서 사용)
+                                try:
+                                    config = AutoConfig.from_pretrained(actual_model_path, local_files_only=True)
+                                    model_type = config.model_type.lower()
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Config 재로딩 성공: {model_type}")
+                                except Exception as config_error:
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - Config 재로딩 실패: {config_error}")
+                                    # 기본 모델 타입 추정 (모델명 기반)
+                                    if 'deberta-v2' in model_name.lower():
+                                        model_type = "deberta-v2"
+                                    elif 'deberta' in model_name.lower():
+                                        model_type = "deberta"
+                                    elif 'bert' in model_name.lower():
+                                        model_type = "bert"
+                                    elif 'roberta' in model_name.lower():
+                                        model_type = "roberta"
+                                    else:
+                                        model_type = "unknown"
+                                    print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - 추정된 모델 타입: {model_type}")
+                                    config = None
                                 
                                 from transformers import AutoModel
                                 
@@ -564,6 +665,50 @@ class MultiModelManager:
                                         use_safetensors=has_safetensors,
                                         low_cpu_mem_usage=True
                                     )
+                                elif model_type == "deberta-v2":
+                                    # DeBERTa-v2 fallback 2 지원 (CRITICAL FIX)
+                                    if self._should_use_classification_model(model_name):
+                                        from transformers import AutoModelForSequenceClassification
+                                        model = AutoModelForSequenceClassification.from_pretrained(
+                                            actual_model_path,
+                                            local_files_only=True,
+                                            torch_dtype=torch.float32,
+                                            trust_remote_code=False,
+                                            use_safetensors=has_safetensors,
+                                            low_cpu_mem_usage=True
+                                        )
+                                        print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DeBERTa-v2 분류 모델 (fallback 2)")
+                                    else:
+                                        model = AutoModel.from_pretrained(
+                                            actual_model_path,
+                                            local_files_only=True,
+                                            torch_dtype=torch.float32,
+                                            trust_remote_code=False,
+                                            use_safetensors=has_safetensors,
+                                            low_cpu_mem_usage=True
+                                        )
+                                        print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DeBERTa-v2 기본 모델 (fallback 2)")
+                                elif model_type == "deberta":
+                                    # DeBERTa (v1) fallback 2 지원
+                                    if self._should_use_classification_model(model_name):
+                                        from transformers import AutoModelForSequenceClassification
+                                        model = AutoModelForSequenceClassification.from_pretrained(
+                                            actual_model_path,
+                                            local_files_only=True,
+                                            torch_dtype=torch.float32,
+                                            trust_remote_code=False,
+                                            use_safetensors=has_safetensors,
+                                            low_cpu_mem_usage=True
+                                        )
+                                    else:
+                                        model = AutoModel.from_pretrained(
+                                            actual_model_path,
+                                            local_files_only=True,
+                                            torch_dtype=torch.float32,
+                                            trust_remote_code=False,
+                                            use_safetensors=has_safetensors,
+                                            low_cpu_mem_usage=True
+                                        )
                                 else:
                                     # 기타 모델들은 균형잡힌 설정
                                     model = AutoModel.from_pretrained(
@@ -597,6 +742,24 @@ class MultiModelManager:
                                 elif model_type == "roberta":
                                     from transformers import RobertaModel
                                     model = RobertaModel(config)
+                                elif model_type == "deberta-v2":
+                                    # DeBERTa-v2 최종 fallback 지원 (CRITICAL FIX)
+                                    if self._should_use_classification_model(model_name):
+                                        from transformers import DebertaV2ForSequenceClassification
+                                        model = DebertaV2ForSequenceClassification(config)
+                                        print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DeBERTa-v2 분류 모델 (최종 fallback)")
+                                    else:
+                                        from transformers import DebertaV2Model
+                                        model = DebertaV2Model(config)
+                                        print(f"[ULTRA] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} - DeBERTa-v2 기본 모델 (최종 fallback)")
+                                elif model_type == "deberta":
+                                    # DeBERTa (v1) 최종 fallback 지원
+                                    if self._should_use_classification_model(model_name):
+                                        from transformers import DebertaForSequenceClassification
+                                        model = DebertaForSequenceClassification(config)
+                                    else:
+                                        from transformers import DebertaModel
+                                        model = DebertaModel(config)
                                 else:
                                     # 범용 AutoModel 사용
                                     from transformers import AutoModel

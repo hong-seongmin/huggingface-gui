@@ -17,10 +17,11 @@ class ComprehensiveModelAnalyzer:
             'generation_config.json': self._analyze_generation_config
         }
     
-    def analyze_model_directory(self, model_path: str) -> Dict[str, Any]:
-        """모델 디렉토리 전체 분석"""
+    def analyze_model_directory(self, model_path: str, model_name: str = "") -> Dict[str, Any]:
+        """모델 디렉토리 전체 분석 - Enhanced with model_name support"""
         analysis = {
             'model_path': model_path,
+            'model_name': model_name,  # Add model_name to analysis
             'files_found': [],
             'files_missing': [],
             'analysis_results': {},
@@ -40,8 +41,8 @@ class ComprehensiveModelAnalyzer:
             else:
                 analysis['files_missing'].append(filename)
         
-        # 모델 요약 생성
-        analysis['model_summary'] = self._generate_model_summary(analysis['analysis_results'])
+        # 모델 요약 생성 - Pass model_name and model_path
+        analysis['model_summary'] = self._generate_model_summary(analysis['analysis_results'], model_name, model_path)
         
         # 권장사항 생성
         analysis['recommendations'] = self._generate_recommendations(analysis)
@@ -199,8 +200,8 @@ class ComprehensiveModelAnalyzer:
             'eos_token_id': config.get('eos_token_id', None)
         }
     
-    def _generate_model_summary(self, analysis_results: Dict) -> Dict[str, Any]:
-        """분석 결과를 바탕으로 모델 요약 생성"""
+    def _generate_model_summary(self, analysis_results: Dict, model_name: str = "", model_path: str = "") -> Dict[str, Any]:
+        """분석 결과를 바탕으로 모델 요약 생성 - Enhanced with unified task detection"""
         summary = {
             'model_type': 'unknown',
             'total_parameters': 0,
@@ -219,10 +220,16 @@ class ComprehensiveModelAnalyzer:
         if 'config.json' in analysis_results:
             config_data = analysis_results['config.json']
             summary['model_type'] = config_data.get('model_type', 'unknown')
-            summary['supported_tasks'] = config_data.get('supported_tasks', [])
             summary['max_sequence_length'] = config_data.get('max_position_embeddings', 0)
             summary['vocabulary_size'] = config_data.get('vocab_size', 0)
             summary['total_parameters'] = config_data.get('model_parameters', 0)
+            
+            # UNIFIED TASK DETECTION: Use enhanced system
+            summary['supported_tasks'] = self._infer_tasks_from_config(
+                config_data.get('full_config', config_data), 
+                model_name, 
+                model_path
+            )
             
             # 상세 설정 정보
             summary['detailed_config'] = {
@@ -550,35 +557,80 @@ for idx, score in ranked_docs:
         
         return recommendations
     
-    def _infer_tasks_from_config(self, config: Dict) -> List[str]:
-        """config에서 지원 가능한 태스크 추론"""
+    def _infer_tasks_from_config(self, config: Dict, model_name: str = "", model_path: str = "") -> List[str]:
+        """config에서 지원 가능한 태스크 추론 - Enhanced with ModelTypeDetector integration"""
+        
+        # PRIORITY: Use ModelTypeDetector for comprehensive analysis
+        if model_name and model_path:
+            try:
+                from model_type_detector import ModelTypeDetector
+                detector = ModelTypeDetector()
+                
+                # Use the sophisticated detection system
+                task_type, model_class, analysis_info = detector.detect_model_type(model_name, model_path)
+                
+                print(f"[ANALYZER] Using ModelTypeDetector for {model_name}: {task_type}")
+                print(f"[ANALYZER] Detection method: {analysis_info.get('detection_method', [])}")
+                print(f"[ANALYZER] Confidence: {analysis_info.get('confidence', 0.0):.2f}")
+                
+                return [task_type] if task_type else []
+                
+            except Exception as e:
+                print(f"[ANALYZER] ModelTypeDetector failed for {model_name}: {e}")
+                print(f"[ANALYZER] Falling back to legacy detection...")
+        
+        # FALLBACK: Legacy architecture-based detection (improved)
         architectures = config.get('architectures', [])
         model_type = config.get('model_type', '').lower()
         tasks = []
         
-        for arch in architectures:
-            if 'ForSequenceClassification' in arch:
-                tasks.append('text-classification')
-            elif 'ForTokenClassification' in arch:
-                tasks.append('token-classification')
-            elif 'ForQuestionAnswering' in arch:
-                tasks.append('question-answering')
-            elif 'ForCausalLM' in arch:
-                tasks.append('text-generation')
-            elif 'ForMaskedLM' in arch:
-                tasks.append('fill-mask')
-            elif 'ForConditionalGeneration' in arch:
-                tasks.append('text2text-generation')
-            elif arch in ['XLMRobertaModel', 'BertModel', 'RobertaModel', 'DistilBertModel', 'ElectraModel']:
-                # 임베딩 모델 감지
-                tasks.append('feature-extraction')
+        # Enhanced architecture mapping with comprehensive support
+        architecture_mapping = {
+            # Sequence Classification
+            'ForSequenceClassification': 'text-classification',
+            'ForTokenClassification': 'token-classification', 
+            'ForQuestionAnswering': 'question-answering',
+            'ForCausalLM': 'text-generation',
+            'ForMaskedLM': 'fill-mask',
+            'ForConditionalGeneration': 'text2text-generation',
+            # Add more mappings as needed
+        }
         
-        # 모델 타입 기반 추가 감지
+        for arch in architectures:
+            # Check each architecture mapping
+            for suffix, task in architecture_mapping.items():
+                if suffix in arch:
+                    tasks.append(task)
+                    break
+            else:
+                # Pure model architectures (embedding only)
+                if arch.endswith('Model') and not any(task_suffix in arch for task_suffix in ['For']):
+                    tasks.append('feature-extraction')
+        
+        # Enhanced model type based detection
         if not tasks:
-            if any(embedding_keyword in model_type for embedding_keyword in ['embed', 'bge', 'sentence', 'retrieval']):
+            # Multi-task models
+            if any(keyword in model_name.lower() for keyword in ['multitask', 'multi-task', 'multi_task']):
+                tasks.append('text-classification')  # Default for multi-task
+            # DeBERTa specific
+            elif 'deberta' in model_type:
+                tasks.append('text-classification')  # Most DeBERTa models are classification
+            # ELECTRA specific  
+            elif 'electra' in model_type:
+                if 'ner' in model_name.lower() or 'klue' in model_name.lower():
+                    tasks.append('token-classification')
+                else:
+                    tasks.append('text-classification')
+            # Embedding models
+            elif any(keyword in model_type for keyword in ['embed', 'bge', 'sentence', 'retrieval']):
                 tasks.append('feature-extraction')
-            elif 'bert' in model_type or 'roberta' in model_type:
-                tasks.append('feature-extraction')
+            # Generic BERT-like models
+            elif any(keyword in model_type for keyword in ['bert', 'roberta', 'xlm']):
+                # Check for classification indicators
+                if config.get('num_labels', 0) > 1 or 'id2label' in config:
+                    tasks.append('text-classification')
+                else:
+                    tasks.append('feature-extraction')
         
         return tasks
     
