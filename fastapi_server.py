@@ -1,10 +1,12 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
+from starlette.middleware.base import BaseHTTPMiddleware
+from pydantic import BaseModel, ValidationError
 import uvicorn
 import threading
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 import json
+import re
 from model_manager import MultiModelManager
 from transformers import pipeline
 import asyncio
@@ -19,10 +21,98 @@ class PredictionRequest(BaseModel):
     top_p: Optional[float] = 1.0
     top_k: Optional[int] = 50
     do_sample: Optional[bool] = False
+    return_all_scores: Optional[bool] = False
+    aggregation_strategy: Optional[str] = "simple"
 
 class ModelLoadRequest(BaseModel):
     model_name: str
     model_path: str
+
+class JSONRepairMiddleware(BaseHTTPMiddleware):
+    """JSON 요청 자동 복구 미들웨어"""
+    
+    def __init__(self, app, logger=None):
+        super().__init__(app)
+        self.logger = logger or logging.getLogger("JSONRepair")
+    
+    async def dispatch(self, request: Request, call_next):
+        # POST 요청이고 JSON 컨텐츠 타입인 경우만 처리
+        if request.method == "POST" and request.headers.get("content-type", "").startswith("application/json"):
+            try:
+                # 원본 body 읽기
+                body = await request.body()
+                original_body = body.decode('utf-8')
+                
+                # JSON 파싱 시도
+                try:
+                    json.loads(original_body)
+                    # 파싱 성공하면 그대로 진행
+                except json.JSONDecodeError:
+                    # JSON 오류 시 자동 복구 시도
+                    repaired_body = self.repair_json(original_body)
+                    if repaired_body != original_body:
+                        self.logger.info(f"JSON 자동 복구 적용: {original_body[:50]}... -> {repaired_body[:50]}...")
+                        # 수정된 body로 새로운 Request 객체 생성
+                        request._body = repaired_body.encode('utf-8')
+                    else:
+                        # JSON 복구도 실패한 경우 텍스트 추출 시도
+                        fallback_data = self.extract_text_fallback(original_body)
+                        if fallback_data["text"]:
+                            self.logger.info(f"텍스트 Fallback 적용: {fallback_data}")
+                            request._body = json.dumps(fallback_data).encode('utf-8')
+                        
+            except Exception as e:
+                self.logger.warning(f"JSON 복구 중 오류: {e}")
+        
+        response = await call_next(request)
+        return response
+    
+    def repair_json(self, json_str: str) -> str:
+        """JSON 문자열 자동 복구"""
+        try:
+            # 1. 백슬래시 이스케이프 문제 수정
+            # \\" -> " 변환 (잘못된 이스케이프)
+            repaired = re.sub(r'\\+"', '"', json_str)
+            
+            # 2. 단일 따옴표를 이중 따옴표로 변환
+            repaired = re.sub(r"'([^']*)':", r'"\1":', repaired)
+            repaired = re.sub(r":\s*'([^']*)'", r': "\1"', repaired)
+            
+            # 3. 키에 따옴표 누락 수정
+            repaired = re.sub(r'([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', repaired)
+            
+            # 4. 후행 쉼표 제거
+            repaired = re.sub(r',\s*}', '}', repaired)
+            repaired = re.sub(r',\s*]', ']', repaired)
+            
+            # 5. 개행문자 이스케이프 처리
+            repaired = repaired.replace('\\n', '\\\\n').replace('\\r', '\\\\r')
+            
+            # 6. 최종 검증
+            json.loads(repaired)
+            return repaired
+            
+        except Exception:
+            # 복구 실패 시 원본 반환
+            return json_str
+    
+    def extract_text_fallback(self, json_str: str) -> dict:
+        """JSON 파싱 완전 실패 시 텍스트 추출"""
+        try:
+            # text 필드 추출 시도
+            text_match = re.search(r'"?text"?\s*:\s*"([^"]*)"', json_str)
+            if text_match:
+                return {"text": text_match.group(1)}
+            
+            # 단일 따옴표로 된 text 필드 추출
+            text_match = re.search(r"'?text'?\s*:\s*'([^']*)'", json_str)
+            if text_match:
+                return {"text": text_match.group(1)}
+                
+        except Exception:
+            pass
+        
+        return {"text": ""}
 
 class FastAPIServer:
     def __init__(self, model_manager: MultiModelManager, host: str = "127.0.0.1", port: int = 8000):
@@ -53,6 +143,9 @@ class FastAPIServer:
             description="API for managing and using HuggingFace models",
             version="1.0.0"
         )
+        
+        # JSON 복구 미들웨어 추가
+        app.add_middleware(JSONRepairMiddleware, logger=self.logger)
         
         self.setup_routes(app, target_models)
         return app
@@ -145,7 +238,17 @@ class FastAPIServer:
         
         @app.post("/models/{model_name}/predict")
         async def predict(model_name: str, request: PredictionRequest):
-            """모델 예측"""
+            """모델 예측 - 텍스트 전처리 자동화 포함"""
+            try:
+                # 텍스트 전처리 자동화
+                processed_text = self.preprocess_text(request.text)
+                if processed_text != request.text:
+                    self.logger.info(f"텍스트 전처리 적용: '{request.text}' -> '{processed_text}'")
+                    request.text = processed_text
+                
+            except Exception as e:
+                self.logger.warning(f"텍스트 전처리 중 오류: {e}")
+            
             # 모델 로드 상태 확인
             model_info = self.model_manager.get_model_info(model_name)
             if not model_info or model_info.status != "loaded":
@@ -189,7 +292,21 @@ class FastAPIServer:
                 }
                 
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+                # Fallback 메커니즘 시도
+                self.logger.warning(f"Primary prediction failed: {e}")
+                try:
+                    fallback_result = self._fallback_prediction(model_name, request.text, task)
+                    return {
+                        "model_name": model_name,
+                        "task": task,
+                        "input": request.text,
+                        "result": fallback_result,
+                        "fallback_used": True,
+                        "timestamp": datetime.now().isoformat()
+                    }
+                except Exception as fallback_error:
+                    self.logger.error(f"Fallback prediction also failed: {fallback_error}")
+                    raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
         
         @app.get("/models/{model_name}/tasks")
         async def get_model_tasks(model_name: str):
@@ -477,6 +594,63 @@ class FastAPIServer:
                 ports.append(port)
         
         return sorted(ports)
+    
+    def preprocess_text(self, text: str) -> str:
+        """텍스트 전처리 자동화"""
+        if not text or not isinstance(text, str):
+            return text
+        
+        try:
+            # 1. 백슬래시 이스케이프 처리
+            processed = text.replace('\\n', '\n').replace('\\r', '\r').replace('\\t', '\t')
+            
+            # 2. 다중 공백 정규화
+            processed = re.sub(r'\s+', ' ', processed)
+            
+            # 3. 앞뒤 공백 제거
+            processed = processed.strip()
+            
+            # 4. 특수문자 정규화 (Unicode 문제 해결)
+            # 전각 문자를 반각으로 변환
+            processed = processed.replace(''', "'").replace(''', "'")
+            processed = processed.replace('"', '"').replace('"', '"')
+            
+            # 5. 빈 문자열 체크
+            if not processed:
+                return text  # 원본 반환
+            
+            return processed
+            
+        except Exception as e:
+            self.logger.warning(f"텍스트 전처리 실패: {e}")
+            return text  # 오류 시 원본 반환
+    
+    def _fallback_prediction(self, model_name: str, text: str, task: str) -> dict:
+        """예측 실패 시 Fallback 메커니즘"""
+        try:
+            # 1. 간단한 기본 응답 제공
+            if task == "text-classification":
+                return [
+                    {"label": "UNKNOWN", "score": 0.5},
+                    {"label": "NEUTRAL", "score": 0.5}
+                ]
+            elif task == "token-classification":
+                # 토큰별로 기본 태그 반환
+                tokens = text.split()
+                return [
+                    {"entity": "O", "score": 0.5, "index": i, "word": token, "start": 0, "end": len(token)}
+                    for i, token in enumerate(tokens)
+                ]
+            elif task == "text-generation":
+                return [{"generated_text": f"{text} [Generation failed - using fallback]"}]
+            elif task == "summarization":
+                return [{"summary_text": f"Summary of: {text[:50]}..."}]
+            else:
+                return {"result": f"Fallback response for task: {task}", "input": text}
+                
+        except Exception as e:
+            self.logger.error(f"Fallback 메커니즘도 실패: {e}")
+            return {"error": "Complete prediction failure", "input": text}
     
     def get_model_server_port(self, model_name: str) -> int:
         """특정 모델이 실행 중인 포트 반환"""
