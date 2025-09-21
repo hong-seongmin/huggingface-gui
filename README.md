@@ -38,7 +38,9 @@ huggingface-gui/
 ├── model_manager.py       # 다중 모델 관리 모듈
 ├── system_monitor.py      # 실시간 시스템 모니터링 모듈
 ├── fastapi_server.py      # 자동 API 서버 모듈
-├── requirements.txt       # 최적화된 의존성 패키지
+├── pyproject.toml         # uv 프로젝트 설정 파일
+├── uv.lock               # uv 의존성 잠금 파일
+├── requirements.txt       # pip 호환 의존성 파일 (레거시)
 ├── app_state.json         # 앱 상태 저장 파일 (자동 생성)
 ├── app_debug.log          # 디버그 로그 파일 (자동 생성)
 └── README.md             # 이 파일
@@ -47,6 +49,17 @@ huggingface-gui/
 ## 🛠️ 설치 및 실행
 
 ### 1. 의존성 설치
+
+#### uv 사용 (권장)
+```bash
+# uv 설치 (처음 한 번만)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 의존성 설치
+uv sync
+```
+
+#### pip 사용 (기존 방식)
 ```bash
 pip install -r requirements.txt
 ```
@@ -55,11 +68,19 @@ pip install -r requirements.txt
 
 #### Streamlit 버전
 ```bash
+# uv 사용
+uv run streamlit run app.py
+
+# pip 사용
 streamlit run app.py
 ```
 
 #### CustomTkinter 버전
 ```bash
+# uv 사용
+uv run python run.py
+
+# pip 사용
 python run.py
 ```
 
