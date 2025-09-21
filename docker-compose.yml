@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  huggingface-gui:
+    build: .
+    container_name: huggingface-gui
+    ports:
+      - "8501:8501"  # Streamlit
+      - "8000:8000"  # FastAPI (primary)
+      - "8001:8001"  # FastAPI (secondary models)
+      - "8002:8002"  # FastAPI (additional models)
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8501
+      - FASTAPI_HOST=0.0.0.0
+      - FASTAPI_PORT=8000
+      - HF_MODEL_CACHE_DIR=/app/model_cache
+      - DEFAULT_DEVICE=auto
+      - MAX_CONCURRENT_MODELS=2
+      - LOG_LEVEL=INFO
+      - STREAMLIT_SERVER_HEADLESS=true
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - TOKENIZERS_PARALLELISM=false
+    volumes:
+      - model_cache:/app/model_cache
+      - app_logs:/app/logs
+      - ./app_state.json:/app/app_state.json
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 2G
+
+  # Optional: Redis for caching (if needed in future)
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: huggingface-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   restart: unless-stopped
+
+volumes:
+  model_cache:
+    driver: local
+  app_logs:
+    driver: local
+  # redis_data:
+  #   driver: local
+
+networks:
+  default:
+    name: huggingface-network
