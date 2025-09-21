@@ -4479,7 +4479,8 @@ def main():
         # Reduced logging for cache UI rendering (only when state changes)
         cache_state = (cache_scanned, cache_info_exists, revisions_count)
         if cache_state != st.session_state.get('_last_cache_state'):
-            logger.info(f"캐시 UI 렌더링 - cache_scanned: {cache_scanned}, cache_info_exists: {cache_info_exists}, revisions_count: {revisions_count}")
+            grid_interaction_active = st.session_state.get('_grid_interaction_active', False)
+            logger.info(f"캐시 UI 렌더링 - cache_scanned: {cache_scanned}, cache_info_exists: {cache_info_exists}, revisions_count: {revisions_count}, grid_interaction: {grid_interaction_active}")
             st.session_state['_last_cache_state'] = cache_state
         
         # 캐시 데이터가 모두 있는 경우
@@ -4487,13 +4488,19 @@ def main():
             st.success(f"🟢 **캐시 상태**: {revisions_count}개 항목 스캔됨")
         # 캐시 스캔 상태만 있고 실제 데이터가 없는 경우
         elif cache_scanned and (not cache_info_exists or revisions_count == 0):
-            st.info(f"🔄 **캐시 상태**: 복원 중... (scanned={cache_scanned}, info={cache_info_exists}, count={revisions_count})")
-            # 자동 복원 시도
-            try:
-                scan_cache()
-                st.rerun()
-            except Exception as e:
-                st.error(f"자동 복원 실패: {e}")
+            # 그리드 상호작용 중인지 체크 (선택된 행이 있으면 상호작용 중으로 간주)
+            grid_interaction_active = st.session_state.get('_grid_interaction_active', False)
+
+            if not grid_interaction_active:
+                st.info(f"🔄 **캐시 상태**: 복원 중... (scanned={cache_scanned}, info={cache_info_exists}, count={revisions_count})")
+                # 자동 복원 시도
+                try:
+                    scan_cache()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"자동 복원 실패: {e}")
+            else:
+                st.info(f"🔄 **캐시 상태**: 그리드 상호작용 중 - 자동 복원 대기 중")
         # 완전히 스캔되지 않은 경우
         else:
             st.warning(f"🟡 **캐시 상태**: 스캔되지 않음 - 아래 버튼으로 스캔하세요")
@@ -4523,30 +4530,40 @@ def main():
                     download_model_to_cache(download_input.strip(), auto_scan=True)
         
         if st.session_state['cache_info']:
+            # 그리드 상호작용 상태 미리 체크 (이전 선택 상태 기반)
+            previous_selection_exists = st.session_state.get('_has_grid_selection', False)
+            st.session_state['_grid_interaction_active'] = previous_selection_exists
+
             # AgGrid 설정
             gb = GridOptionsBuilder.from_dataframe(st.session_state['revisions_df'])
             gb.configure_selection("multiple", use_checkbox=True, groupSelectsChildren=True)
             gb.configure_pagination(paginationAutoPageSize=True)
             gb.configure_side_bar()
             gb.configure_default_column(enablePivot=True, enableValue=True, enableRowGroup=True)
-            
+
             gridOptions = gb.build()
-            
+
             grid_response = AgGrid(
                 st.session_state['revisions_df'],
                 gridOptions=gridOptions,
                 data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
-                update_mode=GridUpdateMode.SELECTION_CHANGED,
+                update_mode=GridUpdateMode.MODEL_CHANGED,
                 fit_columns_on_grid_load=True,
                 enable_enterprise_modules=True,
                 height=400,
                 width='100%',
-                reload_data=False
+                reload_data=False,
+                key="cache_grid"  # 고유 키 추가
             )
-            
+
             selected = grid_response['selected_rows']
             selected_df = pd.DataFrame(selected)
-            
+
+            # 현재 선택 상태 저장 (다음 렌더링에서 사용)
+            st.session_state['_has_grid_selection'] = not selected_df.empty
+            # 그리드 상호작용 상태 최종 업데이트
+            st.session_state['_grid_interaction_active'] = not selected_df.empty
+
             # 선택 요약
             if not selected_df.empty:
                 selected_count = len(selected_df)
