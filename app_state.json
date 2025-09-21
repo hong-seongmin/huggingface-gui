@@ -5,8 +5,8 @@
   "selected_cached_model": "skimb22/koelectra-ner-klue-test1",
   "cache_expanded": false,
   "monitoring_active": true,
-  "fastapi_server_running": true,
+  "fastapi_server_running": false,
   "cache_scanned": true,
   "cache_info_saved": true,
-  "revisions_count": 5
+  "revisions_count": 3
 }
