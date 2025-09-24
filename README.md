@@ -2,6 +2,46 @@
 
 [huggingface-cli](https://huggingface.co/docs/huggingface_hub/ko/guides/cli)를 GUI로 만드는 것이 목적입니다.
 
+## ⚡ 빠른 시작 (Quick Start)
+
+### 원클릭 설치 및 실행
+
+**Linux/Mac:**
+```bash
+git clone https://github.com/hong-seongmin/huggingface-gui.git
+cd huggingface-gui
+./setup.sh
+```
+
+**Windows:**
+```cmd
+git clone https://github.com/hong-seongmin/huggingface-gui.git
+cd huggingface-gui
+setup.bat
+```
+
+**개발자용 (Make 사용):**
+```bash
+git clone https://github.com/hong-seongmin/huggingface-gui.git
+cd huggingface-gui
+make quick-start
+```
+
+### 즉시 실행하기
+
+설치 후 브라우저에서 `http://localhost:8501`로 접속하거나, 다음 명령어로 실행:
+
+```bash
+# uv 사용 (권장)
+uv run streamlit run app.py
+
+# 또는 일반적인 방법
+streamlit run app.py
+
+# 데스크톱 버전
+python run.py
+```
+
 ## 🚀 새로운 기능들
 
 ### 1. 실시간 시스템 모니터링
@@ -38,9 +78,17 @@ huggingface-gui/
 ├── model_manager.py       # 다중 모델 관리 모듈
 ├── system_monitor.py      # 실시간 시스템 모니터링 모듈
 ├── fastapi_server.py      # 자동 API 서버 모듈
+├── setup.sh              # Linux/Mac 자동 설치 스크립트
+├── setup.bat             # Windows 자동 설치 스크립트
+├── Makefile              # 개발자용 편의 명령어
 ├── pyproject.toml         # uv 프로젝트 설정 파일
 ├── uv.lock               # uv 의존성 잠금 파일
-├── requirements.txt       # pip 호환 의존성 파일 (레거시)
+├── requirements.txt       # pip 호환 의존성 파일
+├── requirements-dev.txt   # 개발용 의존성 파일
+├── scripts/              # 유틸리티 스크립트
+│   ├── compatibility_check.py  # 시스템 호환성 체크
+│   └── health_check.py    # 애플리케이션 상태 확인
+├── .env.example          # 환경 변수 템플릿
 ├── app_state.json         # 앱 상태 저장 파일 (자동 생성)
 ├── app_debug.log          # 디버그 로그 파일 (자동 생성)
 └── README.md             # 이 파일
@@ -136,12 +184,89 @@ FastAPI 서버가 실행되면 다음 엔드포인트들을 사용할 수 있습
 - Fill Mask (빈칸 채우기)
 - Text2Text Generation (텍스트 변환)
 
+## 🔧 유틸리티 도구
+
+### 시스템 호환성 체크
+```bash
+# 시스템 요구사항 확인
+python scripts/compatibility_check.py
+
+# 조용한 모드 (결과만 표시)
+python scripts/compatibility_check.py --quiet
+
+# 결과를 파일로 저장
+python scripts/compatibility_check.py --save-report compatibility.json
+```
+
+### 애플리케이션 상태 확인
+```bash
+# 전체 상태 확인
+python scripts/health_check.py
+
+# 빠른 체크 (필수사항만)
+python scripts/health_check.py --quick
+
+# 결과 저장
+python scripts/health_check.py --save-results health.json
+```
+
+### 개발자 명령어 (Makefile)
+```bash
+make help           # 사용 가능한 명령어 보기
+make install        # 프로덕션 의존성 설치
+make install-dev    # 개발 의존성 설치
+make run           # Streamlit 앱 실행
+make test          # 테스트 실행
+make lint          # 코드 검사
+make format        # 코드 포맷팅
+make health        # 상태 확인
+make clean         # 캐시 정리
+```
+
 ## ⚠️ 주의사항
 
 - GPU 메모리 사용량을 모니터링하여 OOM 에러 방지
 - 대용량 모델 로드 시 충분한 시스템 메모리 확보
 - FastAPI 서버는 개발/테스트 용도로 설계됨
 - 프로덕션 환경에서는 별도의 배포 설정 필요
+
+## 🔍 문제 해결
+
+### 일반적인 문제들
+
+**1. 설치 실패**
+```bash
+# 시스템 호환성 확인
+python scripts/compatibility_check.py
+
+# Python 버전 확인 (3.9+ 필요)
+python --version
+
+# 관리자 권한으로 재시도 (필요시)
+sudo ./setup.sh
+```
+
+**2. 실행 오류**
+```bash
+# 상태 확인
+python scripts/health_check.py
+
+# 로그 확인
+tail -f app_debug.log
+
+# 포트 충돌 확인
+netstat -tlnp | grep 8501
+```
+
+**3. 성능 문제**
+- 시스템 모니터링 탭에서 리소스 사용량 확인
+- 큰 모델 사용 시 GPU 메모리 확인
+- 모델 캐시 정리: `make clean`
+
+**4. 도움 요청**
+- 호환성 리포트 생성: `python scripts/compatibility_check.py --save-report`
+- 상태 리포트 생성: `python scripts/health_check.py --save-results`
+- GitHub Issues에 리포트 첨부하여 문제 보고
 
 ## 🐛 알려진 문제점
 
