@@ -1,0 +1,77 @@
+# Development Dependencies for HuggingFace GUI
+# Install with: pip install -r requirements-dev.txt
+
+# Testing
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+pytest-xdist>=3.0.0  # Parallel test execution
+
+# Code Quality
+black>=23.0.0          # Code formatter
+isort>=5.12.0          # Import sorter
+flake8>=6.0.0          # Linter
+mypy>=1.0.0            # Type checker
+bandit>=1.7.0          # Security linter
+pre-commit>=3.0.0      # Git hooks
+
+# Documentation
+sphinx>=6.0.0
+sphinx-rtd-theme>=1.2.0
+myst-parser>=1.0.0     # Markdown support for Sphinx
+
+# Development Tools
+ipython>=8.0.0         # Enhanced REPL
+jupyter>=1.0.0         # Notebook environment
+notebook>=6.5.0
+
+# Debugging and Profiling
+pdb++>=0.10.0          # Enhanced debugger
+memory-profiler>=0.61.0
+line-profiler>=4.0.0
+py-spy>=0.3.0          # Sampling profiler
+
+# Performance Testing
+locust>=2.15.0         # Load testing
+httpx>=0.24.0          # Async HTTP client for testing
+
+# Type Stubs
+types-requests>=2.28.0
+types-urllib3>=1.26.0
+types-setuptools>=67.0.0
+
+# Development Server Utilities
+watchdog>=3.0.0        # File system monitoring
+python-dotenv>=1.0.0   # Environment variable management
+
+# Code Coverage
+coverage[toml]>=7.0.0
+
+# Git and Version Control
+gitpython>=3.1.0
+
+# Database Development (if needed)
+sqlalchemy>=2.0.0      # ORM for potential database features
+alembic>=1.11.0        # Database migrations
+
+# API Development
+httpx>=0.24.0          # Modern HTTP client
+respx>=0.20.0          # HTTP mocking for tests
+
+# Containerization Development
+docker>=6.1.0          # Docker SDK
+docker-compose>=1.29.0
+
+# CLI Development
+click>=8.1.0           # Command line interface
+rich>=13.0.0           # Rich terminal output
+
+# Security Testing
+safety>=2.3.0          # Check for known vulnerabilities
+
+# Documentation Generation
+pdoc>=13.0.0           # API documentation generator
+
+# Development Configuration
+python-decouple>=3.8   # Configuration management
