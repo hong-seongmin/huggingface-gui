@@ -1,0 +1,12 @@
+{
+  "model_path_input": "skimb22/koelectra-ner-klue-test1",
+  "current_model_analysis": null,
+  "auto_refresh_interval": 3,
+  "selected_cached_model": "skimb22/koelectra-ner-klue-test1",
+  "cache_expanded": false,
+  "monitoring_active": true,
+  "fastapi_server_running": false,
+  "cache_scanned": true,
+  "cache_info_saved": false,
+  "revisions_count": 0
+}
