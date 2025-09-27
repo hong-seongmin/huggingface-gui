@@ -1,0 +1,4 @@
+# GPU monitoring dependencies
+# Install these only if you have a GPU and want GPU monitoring
+GPUtil>=1.4.0
+nvidia-ml-py3>=7.352.0  # Alternative GPU library
