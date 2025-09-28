@@ -25,7 +25,8 @@ class SystemMonitor:
             'cpu': [],
             'memory': [],
             'gpu': [],
-            'disk': []
+            'disk': [],
+            'network': []
         }
         self.max_history_length = 100
         
@@ -85,7 +86,14 @@ class SystemMonitor:
         
         # 메모리 정보
         memory = psutil.virtual_memory()
-        swap = psutil.swap_memory()
+
+        # 스왑 메모리 정보 (환경별 권한 제한 대응)
+        try:
+            swap = psutil.swap_memory()
+        except (PermissionError, OSError) as e:
+            logger.info(f"스왑 메모리 정보 접근 제한됨 (WSL/컨테이너 환경): {type(e).__name__}")
+            # Mock 객체로 안전한 폴백 제공
+            swap = type('MockSwap', (), {'total': 0, 'used': 0, 'percent': 0})()
         
         # GPU 정보 (adaptive detection 사용)
         gpu_info = []
@@ -110,11 +118,24 @@ class SystemMonitor:
         else:
             logger.debug("GPU detector 사용 불가")
         
-        # 디스크 정보
-        disk_usage = psutil.disk_usage('/')
+        # 디스크 정보 (환경별 권한 제한 대응)
+        try:
+            disk_usage = psutil.disk_usage('/')
+        except (PermissionError, OSError) as e:
+            logger.info(f"디스크 정보 접근 제한됨 (WSL/컨테이너 환경): {type(e).__name__}")
+            # Mock 객체로 안전한 폴백 제공
+            disk_usage = type('MockDisk', (), {'total': 0, 'used': 0, 'free': 0})()
         
-        # 네트워크 정보
-        net_io = psutil.net_io_counters()
+        # 네트워크 정보 (환경별 권한 제한 대응)
+        try:
+            net_io = psutil.net_io_counters()
+        except (PermissionError, OSError) as e:
+            logger.info(f"네트워크 정보 접근 제한됨 (WSL/컨테이너 환경): {type(e).__name__}")
+            # Mock 객체로 안전한 폴백 제공
+            net_io = type('MockNet', (), {
+                'bytes_sent': 0, 'bytes_recv': 0,
+                'packets_sent': 0, 'packets_recv': 0
+            })()
         
         return {
             'timestamp': datetime.now(),
@@ -142,7 +163,7 @@ class SystemMonitor:
                 'total': disk_usage.total,
                 'used': disk_usage.used,
                 'free': disk_usage.free,
-                'percent': (disk_usage.used / disk_usage.total) * 100
+                'percent': (disk_usage.used / disk_usage.total) * 100 if disk_usage.total > 0 else 0
             },
             'network': {
                 'bytes_sent': net_io.bytes_sent,
@@ -189,6 +210,17 @@ class SystemMonitor:
             'percent': data['disk']['percent'],
             'used_gb': data['disk']['used'] / (1024**3),
             'free_gb': data['disk']['free'] / (1024**3)
+        })
+
+        # 네트워크 히스토리
+        if 'network' not in self.history:
+            self.history['network'] = []
+        self.history['network'].append({
+            'timestamp': timestamp,
+            'bytes_sent': data['network']['bytes_sent'],
+            'bytes_recv': data['network']['bytes_recv'],
+            'packets_sent': data['network']['packets_sent'],
+            'packets_recv': data['network']['packets_recv']
         })
         
         # 히스토리 길이 제한
@@ -305,7 +337,8 @@ class SystemMonitor:
             'cpu': [],
             'memory': [],
             'gpu': [],
-            'disk': []
+            'disk': [],
+            'network': []
         }
     
     def get_resource_usage_summary(self) -> Dict:
