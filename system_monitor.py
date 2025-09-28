@@ -70,7 +70,16 @@ class SystemMonitor:
         """시스템 데이터 수집"""
         # CPU 정보
         cpu_percent = psutil.cpu_percent(interval=None)
-        cpu_freq = psutil.cpu_freq()
+
+        # CPU 주파수 정보 (환경별 권한 제한 대응)
+        try:
+            cpu_freq = psutil.cpu_freq()
+            if cpu_freq is None:
+                logger.info("CPU 주파수 정보 없음 (VM/컨테이너 환경)")
+        except (PermissionError, OSError, AttributeError) as e:
+            logger.info(f"CPU 주파수 정보 접근 제한됨 (WSL/컨테이너 환경): {type(e).__name__}")
+            cpu_freq = None
+
         cpu_count = psutil.cpu_count()
         cpu_count_logical = psutil.cpu_count(logical=True)
         
