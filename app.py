@@ -905,9 +905,40 @@ def render_system_monitoring():
                 delta=f"{disk_gb:.1f}/{total_disk_gb:.1f} GB"
             )
         
-        # GPU 상세 정보
+        # GPU 상태 및 상세 정보
+        st.subheader("🎮 GPU 상태")
+
+        # GPU detector 정보 표시
+        try:
+            from utils.gpu_detector import gpu_detector
+            gpu_status = gpu_detector.get_status()
+            status_msg = gpu_detector.get_status_message()
+
+            # 상태 메시지 표시
+            if gpu_status.torch_cuda_available:
+                st.success(f"{status_msg}")
+            elif gpu_status.nvidia_smi_available:
+                st.warning(f"{status_msg}")
+                if gpu_status.compatibility_issues:
+                    with st.expander("⚠️ 호환성 문제 상세"):
+                        for issue in gpu_status.compatibility_issues:
+                            st.write(f"• {issue}")
+                        st.info("**권장사항**: PyTorch CUDA 버전 확인 후 재설치 또는 CPU 모드 사용")
+            else:
+                st.info(f"{status_msg}")
+
+            # 권장 조치 표시
+            if gpu_status.recommended_action:
+                st.caption(f"💡 권장 조치: {gpu_status.recommended_action}")
+
+        except ImportError:
+            st.warning("GPU detector를 사용할 수 없습니다.")
+        except Exception as e:
+            st.error(f"GPU 상태 확인 중 오류: {e}")
+
+        # GPU 상세 정보 (데이터가 있는 경우만)
         if current_data['gpu']:
-            st.subheader("🎮 GPU 상세 정보")
+            st.subheader("📊 GPU 상세 정보")
             gpu_data = []
             for gpu in current_data['gpu']:
                 gpu_data.append({
@@ -916,9 +947,9 @@ def render_system_monitoring():
                     "사용률": f"{gpu['load']:.1f}%",
                     "메모리 사용률": f"{gpu['memory_util']:.1f}%",
                     "메모리 사용량": f"{gpu['memory_used']:.0f}/{gpu['memory_total']:.0f} MB",
-                    "온도": f"{gpu['temperature']}°C"
+                    "온도": f"{gpu['temperature']}°C" if gpu['temperature'] else "N/A"
                 })
-            
+
             st.dataframe(pd.DataFrame(gpu_data), use_container_width=True)
         
         # 실시간 차트 표시
