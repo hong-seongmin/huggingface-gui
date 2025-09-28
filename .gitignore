@@ -61,6 +61,19 @@ local_settings.py
 db.sqlite3
 db.sqlite3-journal
 
+# Backup and temporary files
+*_original.py
+*_backup.*
+*.tmp
+*.swp
+*.swo
+*.orig
+*.rej
+
+# System files
+.DS_Store
+Thumbs.db
+
 # Flask stuff:
 instance/
 .webassets-cache
