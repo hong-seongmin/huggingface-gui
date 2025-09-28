@@ -6,6 +6,13 @@ import torch
 import logging
 from typing import Any, Dict, Optional, Tuple, Union
 
+# Import adaptive GPU detector
+try:
+    from utils.gpu_detector import gpu_detector
+    GPU_DETECTOR_AVAILABLE = True
+except ImportError:
+    GPU_DETECTOR_AVAILABLE = False
+
 class UniversalDeviceManager:
     """모든 모델에 대한 통합 디바이스 관리"""
     
@@ -14,10 +21,26 @@ class UniversalDeviceManager:
         self.preferred_device = self._detect_optimal_device()
         
     def _detect_optimal_device(self) -> torch.device:
-        """최적 디바이스 자동 감지"""
-        # Streamlit 환경에서는 안정성을 위해 CPU 강제 사용
-        self.logger.info("안정성을 위해 CPU 디바이스 강제 사용")
-        return torch.device('cpu')
+        """최적 디바이스 자동 감지 (adaptive GPU detection 사용)"""
+        if GPU_DETECTOR_AVAILABLE:
+            try:
+                # GPU detector를 사용하여 지능적 디바이스 선택
+                if gpu_detector.is_gpu_recommended():
+                    device_name = gpu_detector.get_device_recommendation()
+                    status_msg = gpu_detector.get_status_message()
+                    self.logger.info(f"GPU 사용 권장: {device_name} - {status_msg}")
+                    return torch.device(device_name)
+                else:
+                    status_msg = gpu_detector.get_status_message()
+                    self.logger.info(f"CPU 모드 사용: {status_msg}")
+                    return torch.device('cpu')
+            except Exception as e:
+                self.logger.warning(f"GPU 감지 실패, CPU로 폴백: {e}")
+                return torch.device('cpu')
+        else:
+            # Fallback: 기존 로직
+            self.logger.info("GPU detector 없음 - 안정성을 위해 CPU 디바이스 사용")
+            return torch.device('cpu')
     
     def ensure_device_consistency(self, model: Any, tokenizer: Any = None) -> Tuple[Any, Any]:
         """모델과 토크나이저의 디바이스 일관성 보장"""
@@ -133,13 +156,31 @@ class UniversalDeviceManager:
             return False
     
     def get_device_info(self) -> Dict[str, Any]:
-        """현재 디바이스 상태 정보"""
+        """현재 디바이스 상태 정보 (adaptive GPU detection 포함)"""
         info = {
             "preferred_device": str(self.preferred_device),
             "cuda_available": torch.cuda.is_available(),
             "cuda_device_count": torch.cuda.device_count() if torch.cuda.is_available() else 0
         }
-        
+
+        # Adaptive GPU detector 정보 추가
+        if GPU_DETECTOR_AVAILABLE:
+            try:
+                gpu_status = gpu_detector.get_status()
+                info.update({
+                    "gpu_detector_available": True,
+                    "gpu_hardware_detected": gpu_status.nvidia_smi_available,
+                    "gpu_compatibility": gpu_status.torch_cuda_available,
+                    "gpu_status_message": gpu_detector.get_status_message(),
+                    "gpu_count_detected": len(gpu_status.gpus),
+                    "compatibility_issues": gpu_status.compatibility_issues,
+                    "recommended_action": gpu_status.recommended_action
+                })
+            except Exception as e:
+                info["gpu_detector_error"] = str(e)
+        else:
+            info["gpu_detector_available"] = False
+
         if torch.cuda.is_available():
             try:
                 info.update({
@@ -149,7 +190,7 @@ class UniversalDeviceManager:
                 })
             except:
                 pass
-        
+
         return info
 
 # 전역 인스턴스

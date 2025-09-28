@@ -1,10 +1,19 @@
 import psutil
-import GPUtil
 import threading
 import time
 from datetime import datetime
 from typing import Dict, List, Callable, Optional
 import json
+import logging
+
+# Import our adaptive GPU detector
+try:
+    from utils.gpu_detector import gpu_detector
+    GPU_DETECTOR_AVAILABLE = True
+except ImportError:
+    GPU_DETECTOR_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
 
 class SystemMonitor:
     def __init__(self, update_interval: float = 1.0):
@@ -69,24 +78,28 @@ class SystemMonitor:
         memory = psutil.virtual_memory()
         swap = psutil.swap_memory()
         
-        # GPU 정보
+        # GPU 정보 (adaptive detection 사용)
         gpu_info = []
-        try:
-            gpus = GPUtil.getGPUs()
-            for gpu in gpus:
-                gpu_info.append({
-                    'id': gpu.id,
-                    'name': gpu.name,
-                    'load': gpu.load * 100,
-                    'memory_util': gpu.memoryUtil * 100,
-                    'memory_total': gpu.memoryTotal,
-                    'memory_used': gpu.memoryUsed,
-                    'memory_free': gpu.memoryFree,
-                    'temperature': gpu.temperature,
-                    'uuid': gpu.uuid
-                })
-        except Exception as e:
-            print(f"GPU monitoring error: {e}")
+        if GPU_DETECTOR_AVAILABLE:
+            try:
+                gpu_list = gpu_detector.get_gpu_info()
+                for gpu in gpu_list:
+                    gpu_info.append({
+                        'id': gpu.id,
+                        'name': gpu.name,
+                        'load': gpu.load,
+                        'memory_util': gpu.memory_util,
+                        'memory_total': gpu.memory_total,
+                        'memory_used': gpu.memory_used,
+                        'memory_free': gpu.memory_free,
+                        'temperature': gpu.temperature,
+                        'uuid': gpu.uuid
+                    })
+                logger.debug(f"GPU 정보 수집: {len(gpu_info)}개")
+            except Exception as e:
+                logger.warning(f"GPU monitoring error: {e}")
+        else:
+            logger.debug("GPU detector 사용 불가")
         
         # 디스크 정보
         disk_usage = psutil.disk_usage('/')
@@ -185,7 +198,21 @@ class SystemMonitor:
     def get_system_info(self) -> Dict:
         """시스템 기본 정보"""
         import platform
-        
+
+        # GPU 정보 수집
+        gpu_count = 0
+        gpu_info = []
+        gpu_status_message = "GPU 정보 없음"
+
+        if GPU_DETECTOR_AVAILABLE:
+            try:
+                status = gpu_detector.get_status()
+                gpu_count = len(status.gpus)
+                gpu_info = [{'name': gpu.name, 'memory': gpu.memory_total} for gpu in status.gpus]
+                gpu_status_message = gpu_detector.get_status_message()
+            except Exception as e:
+                logger.warning(f"GPU 정보 수집 실패: {e}")
+
         return {
             'platform': platform.platform(),
             'processor': platform.processor(),
@@ -194,8 +221,9 @@ class SystemMonitor:
             'cpu_count': psutil.cpu_count(),
             'cpu_count_logical': psutil.cpu_count(logical=True),
             'memory_total': psutil.virtual_memory().total,
-            'gpu_count': len(GPUtil.getGPUs()) if GPUtil.getGPUs() else 0,
-            'gpu_info': [{'name': gpu.name, 'memory': gpu.memoryTotal} for gpu in GPUtil.getGPUs()] if GPUtil.getGPUs() else []
+            'gpu_count': gpu_count,
+            'gpu_info': gpu_info,
+            'gpu_status': gpu_status_message
         }
     
     def get_alerts(self) -> List[Dict]:
